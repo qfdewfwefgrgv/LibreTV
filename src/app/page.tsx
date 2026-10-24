@@ -4,9 +4,12 @@ import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { Header } from '@/components/header';
-import { RecommendSection } from '@/components/douban-section';
+import { LocalLibraryRow, RecommendSection } from '@/components/douban-section';
+import { ForYouRow } from '@/components/for-you';
 import { DetailModal } from '@/components/detail-modal';
 import { AggregatedCard, aggregateResults } from '@/components/video-card';
+import { HeroCarousel, type HeroItem } from '@/components/hero-carousel';
+import { SideCategoryNav } from '@/components/side-category-nav';
 import { useAppStore, resolveSource, isInDisabledSubscription, isSourceDisabled } from '@/lib/store';
 import { api } from '@/lib/client-api';
 import type { SearchResultItem, SourceSearchOutcome } from '@/lib/types';
@@ -37,6 +40,10 @@ function HomeContent() {
   const router = useRouter();
   const { toast } = useToast();
   const urlQuery = searchParams.get('s') || '';
+  // 顶部分类菜单通过 URL 参数驱动推荐区（电影/剧集 + 标签）
+  const catParam = searchParams.get('cat');
+  const tagParam = searchParams.get('tag') || undefined;
+  const catType = catParam === 'movie' ? 'movie' : catParam === 'tv' ? 'tv' : undefined;
   // 精确订阅所需字段（对齐 live 页的做法）：搜索流式期间逐源写健康度、
   // 打开设置抽屉/历史面板等无关 store 变化，都不应触发首页整树重渲染
   const customAPIs = useAppStore((s) => s.customAPIs);
@@ -45,16 +52,49 @@ function HomeContent() {
   const yellowFilter = useAppStore((s) => s.yellowFilter);
   const sourceHealth = useAppStore((s) => s.sourceHealth);
   const subscriptions = useAppStore((s) => s.subscriptions);
+  const doubanEnabled = useAppStore((s) => s.doubanEnabled);
   const [input, setInput] = useState(urlQuery);
   const [detailItem, setDetailItem] = useState<SearchResultItem | null>(null);
   /** 流式搜索中已结算的源（data 就绪前用于增量渲染） */
   const [streamedOutcomes, setStreamedOutcomes] = useState<SourceSearchOutcome[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // URL 驱动搜索：?s= 变化时回填输入框
+  // URL 驱动搜索：?s 变化时回填输入框
   useEffect(() => {
     if (urlQuery) setInput(urlQuery);
   }, [urlQuery]);
+
+  // 从顶部分类菜单跳进来时，等推荐区和影库渲染完再滚动过去。
+  // Next 导航完成后会把页面滚回顶部，所以延时一次不够，第二次做位置校正。
+  useEffect(() => {
+    if (!catType) return;
+    const scrollToRecommend = () => {
+      const el = document.getElementById('recommend');
+      if (!el) return;
+      const top = el.getBoundingClientRect().top + window.scrollY - 64;
+      window.scrollTo({ top, behavior: 'smooth' });
+    };
+    const first = setTimeout(scrollToRecommend, 350);
+    const second = setTimeout(() => {
+      const el = document.getElementById('recommend');
+      if (!el) return;
+      // 已经停在推荐区附近就不重复滚动，避免打断正在进行的平滑滚动
+      if (Math.abs(el.getBoundingClientRect().top - 64) > 60) {
+        scrollToRecommend();
+        // 兜底：平滑滚动在部分环境会被禁用，补一次瞬时滚动
+        setTimeout(() => {
+          const again = document.getElementById('recommend');
+          if (!again) return;
+          const target = again.getBoundingClientRect().top + window.scrollY - 64;
+          if (Math.abs(window.scrollY - target) > 60) window.scrollTo({ top: target });
+        }, 600);
+      }
+    }, 1000);
+    return () => {
+      clearTimeout(first);
+      clearTimeout(second);
+    };
+  }, [catType, tagParam]);
 
   // 源名回显：失败/停用提示里显示友好名称而非裸 key
   const sourceName = (key: string) =>
@@ -116,6 +156,24 @@ function HomeContent() {
     staleTime: 300_000,
   });
 
+  // 首屏大轮播的数据：优先放「自己影库里真能播的」，影库为空才退回豆瓣热门（纯搜索入口）。
+  // 复用 LocalLibraryRow 的 queryKey，与它命中同一份缓存，不会多发一次请求。
+  const libraryQuery = useQuery({
+    queryKey: ['local-list'],
+    queryFn: () => api.localList(),
+    staleTime: 30_000,
+  });
+  const localItems = libraryQuery.data?.list ?? [];
+  // 豆瓣兜底单独开一个 queryKey：推荐区那边按 50 条拉，这里只要 12 条，
+  // 共用一个 key 会让两边互相把缓存覆盖成对方需要的条数
+  const heroFallback = useQuery({
+    queryKey: ['douban', 'movie', '热门', 'hero'],
+    queryFn: ({ signal }) => api.douban('movie', '热门', 0, 12, signal),
+    // 影库拉到结果且确实为空时才去请求，避免定居用户白打一次豆瓣
+    enabled: doubanEnabled && libraryQuery.data !== undefined && localItems.length === 0,
+    staleTime: 300_000,
+  });
+
   // 最近搜索改为搜索框下拉（聚焦展开、按输入过滤），不再常驻首屏
   const searchHistory = useSearchHistory(input);
 
@@ -163,28 +221,56 @@ function HomeContent() {
   const visibleGroups = useMemo(() => groups.slice(0, visibleCount), [groups, visibleCount]);
   useEffect(() => setVisibleCount(RESULT_PAGE_SIZE), [groups]);
 
+  const heroItems = useMemo<HeroItem[]>(() => {
+    if (localItems.length > 0) {
+      return localItems.slice(0, 6).map((it) => {
+        // 本地条目的评分是服务端拼在 remarks 最前面的，拆出来单独展示
+        const { rating, rest } = splitRating(it.remarks);
+        return {
+          key: `local-${it.sourceKey}-${it.vodId}`,
+          title: it.name,
+          cover: it.pic,
+          // 背景视频：约定的同源地址，没剪片段时视频会报错并自动退回上面的封面图
+          heroClip: heroClipUrl(it.name),
+          year: it.year,
+          typeName: it.typeName,
+          area: it.area,
+          rating,
+          summary: rest,
+          ctaLabel: '立即播放',
+          onSelect: () => setDetailItem(it),
+        };
+      });
+    }
+    return (heroFallback.data?.items ?? []).slice(0, 6).map((d) => ({
+      key: `douban-${d.id}`,
+      title: d.title,
+      cover: d.cover,
+      rating: d.rating,
+      ctaLabel: '搜索播放',
+      onSelect: () => {
+        setInput(d.title);
+        runSearch(d.title);
+      },
+    }));
+    // runSearch 每次渲染都是新函数，这里刻意只依赖数据本身：重建 items 是廉价的，
+    // 而 HeroCarousel 按 key 串判断「数据是否真的换了」，不会因此被按回第一张
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localItems, heroFallback.data]);
+
   return (
     <div className="min-h-screen flex flex-col">
-      <Header />
+      {/* 首页整页背景：由《海贼王1180集》抽帧生成，纱的浓淡随亮/暗主题（见 globals.css） */}
+      <div className="page-backdrop" aria-hidden />
+      <Header showSearch />
 
       <main className="relative flex-1 max-w-6xl w-full mx-auto px-4 py-6">
-        {/* 首屏氛围渐变 */}
-        {!urlQuery && (
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-x-0 top-0 h-[420px] -z-10"
-            style={{
-              background:
-                'radial-gradient(60% 60% at 50% 0%, rgba(35,173,229,0.10) 0%, rgba(35,173,229,0.03) 45%, transparent 75%)',
-            }}
-          />
-        )}
-
-        {/* 搜索区 */}
-        <section className={cn('flex flex-col items-center', urlQuery ? 'mb-6' : 'mt-8 mb-8')}>
+        {/* 搜索区：电脑端搜索框已移到顶栏居中，这里只保留平板和手机 */}
+        <section className={cn('flex flex-col items-center lg:hidden', urlQuery ? 'mb-6' : 'mt-8 mb-6')}>
           {!urlQuery && (
             <header className="text-center mb-6">
               <h1 className="text-4xl sm:text-5xl font-bold brand-gradient">LibreTV</h1>
+              <p className="mt-2 text-xs text-muted">多源聚合搜索 · 本地影库直连 · 无广告</p>
             </header>
           )}
           {urlQuery && <h1 className="sr-only">LibreTV 视频搜索</h1>}
@@ -280,11 +366,20 @@ function HomeContent() {
           </div>
         </section>
 
+        {/* 顶部大轮播：本地影库优先（点开即播），影库为空时退回豆瓣热门（点了就搜） */}
+        {!urlQuery && heroItems.length > 0 && (
+          <div className="relative">
+            {/* 电脑端左侧竖排分类：停靠屏幕左缘，悬停/点击向右拉出 */}
+            <SideCategoryNav />
+            <HeroCarousel items={heroItems} />
+          </div>
+        )}
+
         {/* 搜索结果 */}
         {urlQuery && (
           <section aria-label="搜索结果" className="mb-10">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm text-muted">
+              <h2 className="section-heading text-muted">
                 “<span className="text-content">{urlQuery}</span>” 的搜索结果
                 {isSearching ? (
                   <span className="text-faint">
@@ -331,13 +426,16 @@ function HomeContent() {
             ) : list.length > 0 ? (
               <>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-start">
-                  {visibleGroups.map((group) => (
-                    <AggregatedCard
+                  {visibleGroups.map((group, i) => (
+                    // 外层只负责入场错峰：动画的 fill 模式会锁住 transform，
+                    // 直接挂在卡片上会让它的悬停上浮失效
+                    <div
                       key={group.key}
-                      group={group}
-                      sources={selectedSources}
-                      onOpen={(item) => setDetailItem(item)}
-                    />
+                      className="anim-rise"
+                      style={{ animationDelay: `${Math.min(i, 12) * 35}ms` }}
+                    >
+                      <AggregatedCard group={group} sources={selectedSources} onOpen={(item) => setDetailItem(item)} />
+                    </div>
                   ))}
                 </div>
                 {groups.length > visibleCount && (
@@ -364,14 +462,26 @@ function HomeContent() {
           </section>
         )}
 
-        {/* 首页推荐（有搜索时隐藏） */}
+        {/* 首页推荐（有搜索时隐藏）：先展示自己的本地影库，再展示远程榜单 */}
         {!urlQuery && (
-          <RecommendSection
-            onPick={(title) => {
-              setInput(title);
-              runSearch(title);
-            }}
-          />
+          <>
+            <LocalLibraryRow onOpen={(item) => setDetailItem(item)} />
+            {/* 猜你喜欢：按本地记录的观看分类推送同类内容，无记录时不显示 */}
+            <ForYouRow
+              onPick={(title) => {
+                setInput(title);
+                runSearch(title);
+              }}
+            />
+            <RecommendSection
+              initialType={catType}
+              initialTag={tagParam}
+              onPick={(title) => {
+                setInput(title);
+                runSearch(title);
+              }}
+            />
+          </>
         )}
       </main>
 
@@ -388,11 +498,11 @@ function ResultsSkeleton() {
       {Array.from({ length: 6 }).map((_, i) => (
         // 结构对齐真实结果卡（左侧缩略图 + 右侧文字块），避免占位与真实卡片形状不符
         <div key={i} className="card flex h-28 overflow-hidden">
-          <div className="w-[105px] sm:w-[120px] shrink-0 bg-chip animate-pulse" />
+          <div className="w-[105px] sm:w-[120px] shrink-0 skeleton" />
           <div className="flex-1 p-2.5 space-y-2">
-            <div className="h-4 w-3/4 rounded bg-chip animate-pulse" />
-            <div className="h-3 w-1/2 rounded bg-chip animate-pulse" />
-            <div className="h-3 w-full rounded bg-chip animate-pulse" />
+            <div className="h-4 w-3/4 rounded skeleton" />
+            <div className="h-3 w-1/2 rounded skeleton" />
+            <div className="h-3 w-full rounded skeleton" />
           </div>
         </div>
       ))}
@@ -418,4 +528,25 @@ function NoSourceGuide({ hasSources = false }: { hasSources?: boolean }) {
       </p>
     </div>
   );
+}
+
+/**
+ * 本地影库条目的 remarks 里，评分是服务端拼在最前面的（「8.6 分 高清」这种）。
+ * 拆成「评分」与「剩余文字」，好让轮播把评分单独做成高亮徽章。
+ */
+function splitRating(remarks?: string): { rating?: string; rest?: string } {
+  const m = /^\s*([\d.]+)\s*分/.exec(remarks ?? '');
+  if (!m) return { rest: remarks?.trim() || undefined };
+  const rest = (remarks ?? '').slice(m[0].length).trim();
+  return { rating: m[1], rest: rest || undefined };
+}
+
+/**
+ * 首页 banner 背景视频的地址：与「自动剪辑出来的高潮片段」约定为同源 /hero/<片名>.mp4
+ * （片段由服务器上的 make_hero_clip.py 用 ffmpeg 生成，放在应用自己的 public/ 下，
+ * 不塞进影库目录——否则会被 local-cms 扫成一条新影片）。
+ * 片段不存在时 video 会触发 onError 并自动退回静图封面，所以这里不必先问服务端有没有。
+ */
+function heroClipUrl(name: string): string {
+  return `/hero/${encodeURIComponent(name)}.mp4`;
 }

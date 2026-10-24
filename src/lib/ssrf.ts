@@ -75,6 +75,15 @@ export type UpstreamVerdict = { ok: true } | { ok: false; reason: string };
  * 否则服务器会变成内网探测跳板（/api/search 曾直接用用户传的 source.url 发请求）。
  */
 export async function checkUpstreamAllowed(urlString: string): Promise<UpstreamVerdict> {
+  if (allowSourcePrivate()) {
+    // 本地自建影库：部署者显式开启后放行内网/回环地址，协议仍限 http(s)
+    try {
+      const parsed = new URL(urlString);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return { ok: true };
+    } catch {
+      // 解析失败则落到下面的常规校验
+    }
+  }
   if (!isValidProxyUrl(urlString)) {
     return { ok: false, reason: '目标地址不在允许范围内（仅支持公网 http/https）' };
   }
@@ -87,6 +96,16 @@ export async function checkUpstreamAllowed(urlString: string): Promise<UpstreamV
 /** 直播场景是否放行内网地址（自建 IPTV）；由部署者显式开启 */
 export function allowLivePrivate(): boolean {
   return process.env.LIVE_ALLOW_PRIVATE === '1';
+}
+
+/**
+ * 点播源是否放行内网/回环地址（本地自建影库场景）。
+ *
+ * 与直播侧同理，只有部署者显式设置 SOURCE_ALLOW_PRIVATE=1 才放行；
+ * 默认关闭，保持原有的 SSRF 防护。
+ */
+export function allowSourcePrivate(): boolean {
+  return process.env.SOURCE_ALLOW_PRIVATE === '1';
 }
 
 /**

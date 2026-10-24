@@ -1,6 +1,6 @@
 'use client';
 
-import type { SearchResponse, SearchStreamEvent, SourceSearchOutcome, VideoDetail, DoubanResponse, BangumiCalendarResponse, AuthStatusResponse, SourceConfig, SearchResultItem, LivePlaylistResponse, LiveEpgResponse, SourceListPayload, QualityProbeItem, QualityProbeResult } from './types';
+import type { SearchResponse, SearchStreamEvent, SourceSearchOutcome, VideoDetail, DoubanResponse, BangumiCalendarResponse, AuthStatusResponse, SourceConfig, SearchResultItem, LivePlaylistResponse, LiveEpgResponse, SourceListPayload, QualityProbeItem, QualityProbeResult, SessionUser, ManagedUser } from './types';
 
 /**
  * 客户端 API 封装。401 时触发全局事件打开登录框，
@@ -108,11 +108,91 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 export const api = {
   status: () => request<AuthStatusResponse>('/api/status'),
 
-  login: (password: string) =>
-    request<{ success: boolean }>('/api/auth', {
+  /** 首页「我的影库」：本地点播源（LOCAL_LIBRARY_URL）的全部条目 */
+  localList: () => request<{ list: SearchResultItem[]; unrecognized?: string[] }>('/api/local-list'),
+
+  /** 图形验证码：{ id, image(SVG data URI) }，提交登录时回传 id + 用户输入 */
+  captcha: () => request<{ id: string; image: string }>('/api/auth/captcha'),
+
+  /** 发送邮箱/手机验证码（需先通过图形验证码）。devMode=true 表示未配置真实通道，验证码已打印到服务端日志 */
+  sendCode: (channel: 'email' | 'sms', target: string, captchaId: string, captchaCode: string) =>
+    request<{ success: boolean; cooldown?: number; devMode?: boolean }>('/api/auth/code', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ channel, target, captchaId, captchaCode }),
+    }),
+
+  /** 验证码登录（邮箱/手机号，未注册会自动建号） */
+  loginByCode: (
+    channel: 'email' | 'sms',
+    target: string,
+    code: string,
+    captchaId: string,
+    captchaCode: string
+  ) =>
+    request<{ success: boolean; user?: SessionUser; token?: string; expiresAt?: number }>('/api/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'code', channel, target, code, captchaId, captchaCode }),
+    }),
+
+  /** 本机一键登录：用设备凭证换发会话 */
+  loginByDevice: () =>
+    request<{ success: boolean; user?: SessionUser; token?: string; expiresAt?: number }>('/api/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'device' }),
+    }),
+
+  /** 访客登录：输入口令 libretv 即可，免图形验证码 */
+  login: (code: string) =>
+    request<{ success: boolean; user?: SessionUser; token?: string; expiresAt?: number }>('/api/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'guest', password: code }),
+    }),
+
+  /** 注册账号：成功后自动登录，可顺带绑定邮箱/手机号 */
+  register: (
+    username: string,
+    password: string,
+    captchaId: string,
+    captchaCode: string,
+    contact?: { email?: string; phone?: string }
+  ) =>
+    request<{ success: boolean; user?: SessionUser; token?: string; expiresAt?: number }>('/api/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'register',
+        username,
+        password,
+        email: contact?.email,
+        phone: contact?.phone,
+        captchaId,
+        captchaCode,
+      }),
+    }),
+
+  /** 账号密码登录 */
+  loginAccount: (username: string, password: string, captchaId: string, captchaCode: string) =>
+    request<{ success: boolean; user?: SessionUser; token?: string; expiresAt?: number }>('/api/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'login', username, password, captchaId, captchaCode }),
+    }),
+
+  /** 当前会话身份 */
+  me: () => request<{ success: boolean; verified: boolean; user: SessionUser | null }>('/api/auth'),
+
+  /** 用户管理（仅管理员/开发者） */
+  listUsers: () => request<{ success: boolean; users: ManagedUser[]; me: SessionUser }>('/api/users'),
+
+  setUserRole: (id: string, role: 'user' | 'admin') =>
+    request<{ success: boolean; user: ManagedUser }>(`/api/users/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role }),
     }),
 
   logout: () => request<{ success: boolean }>('/api/auth', { method: 'DELETE' }),
@@ -227,10 +307,11 @@ export const api = {
     return request<LivePlaylistResponse>(`/api/live/playlist?${sp.toString()}`, { signal });
   },
 
-  /** 查询某频道的节目单（服务端缓存 6h） */
-  liveEpg: (epgUrl: string, tvgId: string, force = false, signal?: AbortSignal) => {
+  /** 查询某频道的节目单（服务端缓存 6h）；days>1 时同时返回最近的已播节目（回看用） */
+  liveEpg: (epgUrl: string, tvgId: string, force = false, signal?: AbortSignal, days = 1) => {
     const sp = new URLSearchParams({ url: epgUrl, channel: tvgId });
     if (force) sp.set('force', '1');
+    if (days > 1) sp.set('days', String(days));
     return request<LiveEpgResponse>(`/api/live/epg?${sp.toString()}`, { signal });
   },
 

@@ -26,6 +26,10 @@ const config: Config = {
           DEFAULT: 'rgb(var(--c-accent) / <alpha-value>)',
           hover: 'rgb(var(--c-accent-hover) / <alpha-value>)',
         },
+        // 霓虹动漫风的两个辅助色：品红与紫。只用于渐变/点缀/光环，
+        // 不承担正文语义（正文仍走 content/muted/faint，保证对比度不受影响）
+        accent2: 'rgb(var(--c-accent2) / <alpha-value>)',
+        accent3: 'rgb(var(--c-accent3) / <alpha-value>)',
         // 语义状态色：随亮/暗主题切换，替代直接使用 red/green/amber 等调色板
         danger: {
           DEFAULT: 'rgb(var(--c-danger) / <alpha-value>)',

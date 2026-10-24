@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { guardRequest, jsonError } from '@/lib/api-guard';
-import { checkLiveUrlAllowed, isBlockedByDNS, isValidProxyUrl } from '@/lib/ssrf';
+import { jsonError } from '@/lib/api-guard';
+import { checkLiveUrlAllowed, checkUpstreamAllowed } from '@/lib/ssrf';
 import { fetchWithSafeRedirects } from '@/lib/fetch-utils';
 import { rewriteM3u8, LIVE_STREAM_BASE } from '@/lib/m3u8';
 
@@ -34,29 +34,6 @@ function isDoubanHost(host: string): boolean {
   );
 }
 
-/**
- * 未登录即可代理的图片域白名单（精确后缀匹配，防 `evil-bgm.tv` 类绕过）：
- * 豆瓣封面需要 Referer 伪装；热榜 cover_proxy 镜像与 Bangumi 封面
- * 均为公开图片 CDN，无 Referer 校验，仅需防开放代理滥用。
- */
-function isAnonymousImageHost(host: string): boolean {
-  const h = host.toLowerCase();
-  return (
-    isDoubanHost(h) ||
-    h === 'doubanio.viki.moe' || h.endsWith('.doubanio.viki.moe') ||
-    h === 'bgm.tv' || h.endsWith('.bgm.tv')
-  );
-}
-
-// 未鉴权的图片等资源也允许走代理（豆瓣防盗链需要 Referer 伪装）；
-// 但为防止被当作开放代理滥用，仅放行上述公开图片域，其余必须已登录。
-function looksLikeImageUrl(target: string): boolean {
-  const host = (() => {
-    try { return new URL(target).hostname; } catch { return ''; }
-  })();
-  return isAnonymousImageHost(host);
-}
-
 /** 解码路径段形式的代理目标（网关可能已把 %2F 解码为 /，失败时原样返回） */
 export function decodePathTarget(encodedUrl: string): string {
   try { return decodeURIComponent(encodedUrl); } catch { return encodedUrl; }
@@ -64,19 +41,16 @@ export function decodePathTarget(encodedUrl: string): string {
 
 /**
  * 通用流式代理（点播 / 图片）：
- * - 已登录会话（httpOnly cookie）→ m3u8 重写后的分片同源请求自动携带，不再有旧版丢鉴权参数的问题；
- * - 未登录仅放行图片目标（豆瓣封面等），且同样受 SSRF 防护约束；
- * - m3u8 文本重写为代理地址，分片/key/map 全部经本站转发，规避上游 CORS。
+ * - 免登录即可播放：访客直接观看时，m3u8 与分片同样经本站同源转发；
+ * - m3u8 文本重写为代理地址，分片/key/map 全部经本站转发，规避上游 CORS；
+ * - 所有目标统一走 SSRF 校验。
  */
 export async function handleProxyRequest(req: Request, targetUrl: string): Promise<Response> {
-  const guarded = guardRequest(req);
-  if (guarded && !looksLikeImageUrl(targetUrl)) return guarded;
-
-  if (!isValidProxyUrl(targetUrl)) {
-    return new NextResponse('无效的 URL', { status: 400 });
-  }
-  if (await isBlockedByDNS(targetUrl)) {
-    return new NextResponse('不允许访问私有/保留网络地址', { status: 403 });
+  // 与采集站共用同一套校验：部署者显式开启 SOURCE_ALLOW_PRIVATE=1 时放行回环/内网地址，
+  // 让自建影库的封面与影片能经本站代理转发（对外只保留一个端口）。
+  const verdict = await checkUpstreamAllowed(targetUrl);
+  if (!verdict.ok) {
+    return jsonError(verdict.reason, 403);
   }
 
   const headers: Record<string, string> = { 'User-Agent': UA, Accept: '*/*' };
@@ -93,16 +67,25 @@ export async function handleProxyRequest(req: Request, targetUrl: string): Promi
   let finalUrl = targetUrl;
   let lastError: unknown = null;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    // 超时只覆盖「等响应头」这一段：AbortSignal.timeout 会被整条响应流继承，
+    // 直接拿它包住媒体请求会让大文件播几秒就被掐断（直播侧同理，故单独处理）。
+    // 客户端断开时仍通过同一个 controller 终止上游连接，避免连接泄漏。
+    const controller = new AbortController();
+    const headerTimer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    const onClientAbort = () => controller.abort();
+    req.signal.addEventListener('abort', onClientAbort, { once: true });
     try {
       const result = await fetchWithSafeRedirects(targetUrl, {
         headers,
-        signal: AbortSignal.timeout(TIMEOUT_MS),
+        signal: controller.signal,
       });
+      clearTimeout(headerTimer);
       response = result.res;
       finalUrl = result.finalUrl;
       lastError = null;
       break;
     } catch (err) {
+      clearTimeout(headerTimer);
       lastError = err;
     }
   }
@@ -120,7 +103,12 @@ export async function handleProxyRequest(req: Request, targetUrl: string): Promi
 
   // m3u8 文本：重写为代理地址（以重定向后的最终 URL 为 base 解析相对地址）
   if (isM3u8) {
-    const text = await response.text();
+    // 响应流已不再带整体超时，这里给「读文本」单独设上限，避免上游卡住时请求挂死
+    const text = await Promise.race([
+      response.text(),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), TIMEOUT_MS)),
+    ]);
+    if (text === null) return jsonError('上游播放列表读取超时', 504);
     return new NextResponse(rewriteM3u8(text, finalUrl), {
       status: response.status,
       headers: {
@@ -137,7 +125,15 @@ export async function handleProxyRequest(req: Request, targetUrl: string): Promi
     const v = response.headers.get(name);
     if (v) outHeaders.set(name, v);
   }
-  // fetch 会自动解压，转发时必须去掉长度相关头避免浏览器二次解压
+  // 上游没有压缩时，把长度头也带上：视频播放器要靠它判断文件有多大
+  // （无 Range 的请求若既没有 Content-Length 也没有 Content-Range，浏览器
+  // 就不知道总长度——拖进度失效，部分播放器会直接放弃播放）。
+  // 上游带 content-encoding 时不能带：fetch 已经解压过，原长度对不上，
+  // 浏览器会按错误的长度截断响应。
+  if (!response.headers.get('content-encoding')) {
+    const len = response.headers.get('content-length');
+    if (len) outHeaders.set('content-length', len);
+  }
   // 图片基本不变：长缓存交给浏览器与边缘 CDN（分片 / key 仍保守 1 小时）
   outHeaders.set(
     'Cache-Control',
@@ -166,9 +162,6 @@ export async function handleProxyRequest(req: Request, targetUrl: string): Promi
  * - 部署者可设 LIVE_ALLOW_PRIVATE=1 显式放行内网自建源（默认拒绝）。
  */
 export async function handleLiveStreamRequest(req: Request, targetUrl: string): Promise<Response> {
-  const guarded = guardRequest(req);
-  if (guarded) return guarded;
-
   const verdict = await checkLiveUrlAllowed(targetUrl);
   if (!verdict.ok) return jsonError(verdict.reason, 403);
 

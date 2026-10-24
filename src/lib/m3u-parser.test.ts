@@ -120,4 +120,23 @@ https://s.example.com/ok.m3u8`;
     expect(parseM3u('随便一段文本\n没有地址')).toEqual([]);
     expect(parseM3u('#EXTINF:-1,孤儿频道')).toEqual([]);
   });
+
+  it('解析回看属性（catchup / catchup-source / catchup-days）', () => {
+    const m3u = `#EXTM3U
+#EXTINF:-1 tvg-id="gdty" catchup="append" catchup-days="3" catchup-source="?starttime=\${start}&endtime=\${end}",广东体育
+https://live.example.com/gdty.m3u8`;
+    const [channel] = parseM3u(m3u);
+    expect(channel).toMatchObject({
+      catchup: 'append',
+      catchupSource: '?starttime=${start}&endtime=${end}',
+      catchupDays: 3,
+    });
+  });
+
+  it('catchup-days 非数字或非正数时不写入', () => {
+    const [channel] = parseM3u(
+      '#EXTINF:-1 catchup="default" catchup-days="abc",X\nhttps://s.example.com/x.m3u8'
+    );
+    expect(channel.catchupDays).toBeUndefined();
+  });
 });

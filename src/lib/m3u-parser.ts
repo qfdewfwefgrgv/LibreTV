@@ -104,6 +104,7 @@ export function parseM3u(content: string, baseUrl?: string): LiveChannel[] {
     const tvgId = attrs['tvg-id'] || undefined;
     const logo = attrs['tvg-logo'] ? normalizeStreamUrl(attrs['tvg-logo'], baseUrl) : undefined;
     const name = cur?.title || nameFromUrl(url);
+    const catchupDays = attrs['catchup-days'] ? Number.parseInt(attrs['catchup-days'], 10) : undefined;
     channels.push({
       id: tvgId || stableId(url),
       name,
@@ -112,6 +113,11 @@ export function parseM3u(content: string, baseUrl?: string): LiveChannel[] {
       group: attrs['group-title'] || cur?.extGroup || undefined,
       tvgId,
       rawName: attrs['tvg-name'] || undefined,
+      // 回看属性原样保留；catchup-source 可能是相对片段（append 模式）也可能是完整模板
+      catchup: attrs['catchup'] || undefined,
+      catchupSource: attrs['catchup-source'] || undefined,
+      catchupDays: Number.isFinite(catchupDays) && catchupDays! > 0 ? catchupDays : undefined,
+      catchupType: attrs['catchup-type'] || undefined,
     });
   }
 

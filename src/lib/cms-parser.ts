@@ -40,6 +40,11 @@ export function parseSearchList(
       year: typeof vod.vod_year === 'string' ? vod.vod_year : undefined,
       area: typeof vod.vod_area === 'string' ? vod.vod_area : undefined,
       remarks: typeof vod.vod_remarks === 'string' ? vod.vod_remarks : undefined,
+      content: typeof vod.vod_content === 'string' ? vod.vod_content : undefined,
+      tags:
+        typeof vod.vod_tag === 'string' && vod.vod_tag
+          ? vod.vod_tag.split('/').map((t) => t.trim()).filter(Boolean)
+          : undefined,
       sourceUrl: source.url,
       isAdult: source.isAdult,
     };
@@ -176,24 +181,32 @@ export function normalizeTitle(s: string): string {
 }
 
 /**
+ * 片名匹配用的键：在 normalizeTitle 之上再剥掉各站写法不一的修饰词。
+ * 豆瓣常写「死神 千年血战篇 -祸进谭-」，而影库/采集站存「死神千年血战-祸进谭」，
+ * 只差一个「篇」或「第X季」就会互相匹配不上，导致明明有片却搜不到。
+ */
+const TITLE_NOISE_RE = /第[一二三四五六七八九十百\d]+[季部期]|season\d+|part\d+|篇|剧场版/gi;
+
+function matchKey(s: string): string {
+  return normalizeTitle(s).replace(TITLE_NOISE_RE, '');
+}
+
+/**
  * 相关性判断：结果标题是否真的命中了搜索词。
  * 部分采集站会做分词/OR 模糊搜索（搜「摔跤吧！爸爸」返回一堆「爸爸XXX」），
  * 逐条校验后只保留真正相关的结果。
  *
- * 规则：归一化后的标题包含归一化后的完整关键词；
+ * 规则：匹配键后的标题包含匹配键后的完整关键词；
  * 多词查询（空格分隔）时放宽为「每个词都命中」即可（如「钢铁侠 2008」）。
  */
 export function isRelevant(name: string, wd: string): boolean {
-  const nName = normalizeTitle(name);
-  const nWd = normalizeTitle(wd);
+  const nName = matchKey(name);
+  const nWd = matchKey(wd);
   if (!nName || !nWd) return true; // 空关键词不参与过滤
   if (nName.includes(nWd)) return true;
-  const tokens = wd.trim().split(/\s+/);
+  const tokens = wd.trim().split(/\s+/).map(matchKey).filter(Boolean);
   if (tokens.length > 1) {
-    return tokens.every((t) => {
-      const n = normalizeTitle(t);
-      return n && nName.includes(n);
-    });
+    return tokens.every((t) => nName.includes(t));
   }
   return false;
 }

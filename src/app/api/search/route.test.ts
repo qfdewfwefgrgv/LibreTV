@@ -123,22 +123,16 @@ describe('POST /api/search', () => {
     expect(lines[lines.length - 1].type).toBe('done');
   });
 
-  it('未登录返回 401，未配置密码返回 503', async () => {
-    vi.stubGlobal('fetch', vi.fn());
-    const saved = process.env.PASSWORD;
-    delete process.env.PASSWORD;
-    try {
-      const noPassword = await POST(makeRequest({ wd: 'x', sources: SOURCES }));
-      expect(noPassword.status).toBe(503);
-    } finally {
-      process.env.PASSWORD = saved;
-    }
+  it('免登录即可搜索：不带会话 Cookie 也能正常返回', async () => {
+    mockUpstream();
     const noCookie = new Request('https://local.test/api/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ wd: 'x', sources: SOURCES }),
+      body: JSON.stringify({ wd: '测试剧', sources: SOURCES, filterAdult: true }),
     });
-    const unauthorized = await POST(noCookie);
-    expect(unauthorized.status).toBe(401);
+    const res = await POST(noCookie);
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as { list: Array<{ name: string }> };
+    expect(data.list.length).toBeGreaterThan(0);
   });
 });

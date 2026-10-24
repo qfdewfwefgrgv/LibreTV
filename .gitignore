@@ -7,6 +7,9 @@ out/
 vitest-results.json
 *.log
 
+# 账号数据库（含注册用户凭据，禁止入库）
+data/
+
 # AI 工具产物（本机会话/缓存数据，不入库）
 .mimosa/
 .zcode/

@@ -24,7 +24,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#0b101a',
+  themeColor: '#f6f7f9',
   width: 'device-width',
   initialScale: 1,
 };
@@ -37,11 +37,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "(function(){try{var t=localStorage.getItem('libretv-theme')||'dark';var d=t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('dark',d);}catch(e){}})()",
+              "(function(){try{var t=localStorage.getItem('libretv-theme-v2')||'light';var d=t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('dark',d);}catch(e){}})()",
           }}
         />
       </head>
       <body>
+        {/* 全局极光背景层：fixed + 负 z-index，垫在页面底色之上、所有内容之下（见 globals.css） */}
+        <div className="aurora-layer" aria-hidden />
         <Providers>{children}</Providers>
       </body>
     </html>

@@ -179,6 +179,13 @@ describe('isRelevant', () => {
     expect(isRelevant('钢铁侠 Iron Man 2008', '钢铁侠 2008')).toBe(true);
   });
 
+  it('豆瓣标题多出的「篇/第X季」不影响命中', () => {
+    expect(isRelevant('死神千年血战-祸进谭', '死神 千年血战篇 -祸进谭-')).toBe(true);
+    expect(isRelevant('庆余年', '庆余年 第二季')).toBe(true);
+    // 剥离修饰词后仍不同名的，还是要判为不相关
+    expect(isRelevant('死神千年血战 相克谭', '死神 千年血战篇 -祸进谭-')).toBe(false);
+  });
+
   it('空关键词或空标题不参与过滤', () => {
     expect(isRelevant('任意标题', '')).toBe(true);
     expect(isRelevant('', '任意')).toBe(true);

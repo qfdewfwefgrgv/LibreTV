@@ -20,6 +20,10 @@ export interface SearchResultItem {
   year?: string;
   area?: string;
   remarks?: string;
+  /** 简介（来自采集站/影库侧车 meta 的 vod_content），用于卡片浮层展示 */
+  content?: string;
+  /** 标签（影库侧车 meta 的 tags，如 漫画/战斗/热血），列表接口以 vod_tag 输出 */
+  tags?: string[];
   /** 自定义源的 API 地址，详情请求需要 */
   sourceUrl?: string;
   isAdult?: boolean;
@@ -130,6 +134,14 @@ export interface AuthStatusResponse {
   /** 当前会话是否已验证 */
   verified: boolean;
   version: string;
+  /** 登录能力开关：未开通的方式前端会给出明确说明，而不是变成死按钮 */
+  authCapabilities?: {
+    email: boolean;
+    sms: boolean;
+    wechat: boolean;
+    qq: boolean;
+    device: boolean;
+  };
   /** 部署者通过 DEFAULT_SOURCES 环境变量预置的采集站（未配置时为空数组） */
   defaultSources: SourceConfig[];
   /** 部署者通过 DEFAULT_LIVE_SOURCES 环境变量预置的直播源（未配置时为空数组） */
@@ -165,6 +177,14 @@ export interface LiveChannel {
   tvgId?: string;
   /** M3U 的 tvg-name 属性（原始台名） */
   rawName?: string;
+  /** 回看模式（M3U catchup：append/default/timeshift/fs 等） */
+  catchup?: string;
+  /** 回看地址模板（M3U catchup-source，可含 ${start}/${end} 等占位符） */
+  catchupSource?: string;
+  /** 回看天数（M3U catchup-days） */
+  catchupDays?: number;
+  /** 回看时间类型（M3U catchup-type，如 default/flussonic） */
+  catchupType?: string;
 }
 
 export interface LivePlaylistResponse {
@@ -234,4 +254,29 @@ export interface SourceListPayload {
   liveSources: Omit<LiveSourceConfig, 'key'>[];
   /** 解析统计（格式、跳过与截断），老数据可能缺失 */
   stats?: SubscriptionParseStats;
+}
+
+// —— 账号体系 ——
+
+export type UserRole = 'guest' | 'user' | 'admin' | 'developer';
+
+/** 当前会话身份（/api/auth 返回） */
+export interface SessionUser {
+  sub: string;
+  username: string;
+  role: UserRole;
+  /** 绑定的邮箱（验证码登录自动建号时写入） */
+  email?: string;
+  /** 绑定的手机号 */
+  phone?: string;
+}
+
+/** 用户管理列表里的账号（不含密码） */
+export interface ManagedUser {
+  id: string;
+  username: string;
+  email?: string;
+  phone?: string;
+  role: 'user' | 'admin' | 'developer';
+  createdAt: number;
 }

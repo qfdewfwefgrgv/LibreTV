@@ -7,19 +7,26 @@
  * 深色主题沿用旧版 LibreTV 配色；浅色主题为对应的白底变体。
  */
 :root {
-  --c-page: 246 247 249;           /* #f6f7f9 */
+  /* 冷色调·蓝白：页面底色、面板、边框全部往蓝白方向偏，保持浅色系 */
+  --c-page: 244 248 255;           /* #f4f8ff 冷调蓝白页面底 */
   --c-surface: 255 255 255;        /* #ffffff */
-  --c-surface-raised: 255 255 255;
+  --c-surface-raised: 250 252 255; /* #fafcff */
   --c-card: 255 255 255;
-  --c-chip: 238 240 243;           /* #eef0f3 */
-  --c-hover: 233 236 240;          /* #e9ecf0 */
-  --c-line: 224 227 232;           /* #e0e3e8 */
-  --c-content: 26 26 26;           /* #1a1a1a */
-  --c-muted: 95 99 104;            /* #5f6368 */
-  --c-faint: 107 114 128;          /* #6b7280（原 #8a8f98 对白底仅 3.2:1，加深后达到 AA 4.5:1） */
+  --c-chip: 237 244 255;           /* #edf4ff */
+  --c-hover: 227 239 255;          /* #e3efff */
+  --c-line: 213 227 246;           /* #d5e3f6 冷调浅蓝边框 */
+  --c-content: 22 36 56;           /* #162438 冷调深蓝黑正文 */
+  --c-muted: 80 102 132;           /* #506684 */
+  --c-faint: 107 128 156;          /* #6b809c（AA 4.5:1） */
   --c-accent: 37 99 235;           /* blue-600 */
   --c-accent-hover: 29 78 216;     /* blue-700 */
   --c-on-accent: 255 255 255;      /* accent 实心底上的文字色 */
+  /* 辅助点缀色（品红/紫）：亮色下取深值，保证浅底上仍能看清 */
+  --c-accent2: 219 39 119;         /* pink-600 */
+  --c-accent3: 147 51 234;         /* purple-600 */
+  /* 首页整页背景图上那层纱的不透明度：亮色主题要更浓，深色文字才压得住 */
+  --bg-veil-a: 0.74;
+  --bg-veil-b: 0.90;
   /* 语义状态色（亮色主题取偏深值，保证浅底上的对比度） */
   --c-danger: 220 38 38;           /* red-600 */
   --c-danger-hover: 185 28 28;     /* red-700 */
@@ -36,21 +43,26 @@
 }
 
 .dark {
-  /* 旧版 LibreTV（backup-2025）赛博影视主题（整体调深一档）：深蓝黑底 + 霓虹蓝/粉点缀 */
-  --c-page: 11 16 26;              /* #0b101a 深蓝黑页面底色 */
-  --c-surface: 20 28 41;           /* #141c29 弹窗/抽屉底色 */
-  --c-surface-raised: 20 28 41;
-  --c-card: 13 20 31;              /* #0d141f 卡片底色 */
-  --c-chip: 22 32 46;              /* #16202e 卡片/输入框底色 */
-  --c-hover: 29 42 61;             /* #1d2a3d 悬停态（chip 提亮） */
-  --c-line: 34 48 69;              /* #223045 边框（近似旧版 rgba(0,204,255,.15) 观感） */
-  --c-content: 230 242 255;        /* #e6f2ff 蓝白主文本（--text-color） */
-  --c-muted: 133 153 178;          /* #8599b2 次级文本（--text-muted） */
-  --c-faint: 107 127 153;          /* #6b7f99 三级文本 */
-  --c-accent: 0 184 230;           /* #00b8e6 霓虹蓝主色（--primary-color 调深一档） */
-  --c-accent-hover: 51 214 255;    /* #33d6ff 霓虹蓝浅变体（--primary-light） */
-  /* 霓虹蓝底亮度过高（对白字仅 2.35:1），暗色下实心底改用深色文字 */
-  --c-on-accent: 8 19 31;
+  /* 霓虹动漫主题：深蓝紫底（比原来的深蓝黑更冷、更"夜色"）+ 青/品红霓虹点缀 */
+  --c-page: 8 11 24;               /* #080b18 深蓝紫页面底色 */
+  --c-surface: 15 21 38;           /* #0f1526 弹窗/抽屉底色 */
+  --c-surface-raised: 19 26 46;    /* #131a2e 抬高一层的面板 */
+  --c-card: 12 17 32;              /* #0c1120 卡片底色 */
+  --c-chip: 23 31 54;              /* #171f36 卡片/输入框底色 */
+  --c-hover: 33 44 74;             /* #212c4a 悬停态（chip 提亮） */
+  --c-line: 38 52 84;              /* #263454 边框 */
+  --c-content: 233 240 255;        /* #e9f0ff 蓝白主文本（对 page 约 16:1） */
+  --c-muted: 148 163 196;          /* #94a3c4 次级文本（对 page 约 7.4:1） */
+  --c-faint: 118 133 167;          /* #7685a7 三级文本（对 page 约 4.7:1，仍达 AA） */
+  --c-accent: 0 190 240;           /* #00bef0 霓虹青主色 */
+  --c-accent-hover: 77 219 255;    /* #4ddbff 霓虹青浅变体 */
+  /* 霓虹青底亮度过高（对白字仅 2.35:1），暗色下实心底改用深色文字 */
+  --c-on-accent: 6 16 28;
+  --c-accent2: 255 61 129;         /* #ff3d81 霓虹品红（渐变端点、评分、光环） */
+  --c-accent3: 168 85 247;         /* #a855f7 霓虹紫（渐变中点、背景雾） */
+  /* 深色主题下背景图可以露得多一些（文字本身是亮色，对比度够） */
+  --bg-veil-a: 0.56;
+  --bg-veil-b: 0.80;
   /* 语义状态色（暗色主题取中等明度值，保证深蓝黑底上的对比度） */
   --c-danger: 239 68 68;           /* red-500 */
   --c-danger-hover: 248 113 113;   /* red-400 */
@@ -66,14 +78,25 @@
   color-scheme: dark;
 }
 
+/*
+ * 页面底色画在 <html>（根画布）上，<body> 保持透明。
+ * 原因：负 z-index 的极光层要露出来——按 CSS 绘制顺序，根元素的背景在最底层先画，
+ * 而 <body> 的背景属于普通块级背景、排在负 z-index 之后；body 一旦是不透明的，
+ * 极光层就会被整片盖死（此前首页那个 -z-10 的氛围渐变其实一直都没显出来）。
+ */
+html {
+  background-color: rgb(var(--c-page));
+}
 html,
 body {
-  @apply bg-page text-content antialiased;
+  @apply text-content antialiased;
 }
-
-/* 暗色主题：模拟旧版 .page-bg 的深蓝黑纵向渐变 */
-.dark body {
-  background: linear-gradient(180deg, rgb(11 16 26), rgb(20 28 41)) fixed;
+body {
+  background: transparent;
+}
+.dark html {
+  background-image: linear-gradient(180deg, rgb(8 11 24), rgb(22 30 54));
+  background-attachment: fixed;
 }
 
 body {
@@ -133,9 +156,14 @@ body {
   color: rgb(var(--c-on-accent)) !important;
 }
 
-/* 品牌渐变字（沿用旧版 LibreTV 的霓虹蓝→霓虹粉） */
+/* 品牌渐变字：青 → 紫 → 品红，直接吃主题 token，亮暗两套主题都跟着走 */
 .brand-gradient {
-  background: linear-gradient(to right, #00ccff, #ff3c78);
+  background: linear-gradient(
+    100deg,
+    rgb(var(--c-accent)) 0%,
+    rgb(var(--c-accent3)) 45%,
+    rgb(var(--c-accent2)) 100%
+  );
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -153,4 +181,272 @@ body {
 @keyframes live-breathe {
   0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
   50% { opacity: 0.55; box-shadow: 0 0 0 4px rgba(239, 68, 68, 0); }
+}
+
+/* ==========================================================================
+   霓虹动漫风视觉层（首页改版新增）
+   ========================================================================== */
+
+/* —— 全局极光背景：两层缓慢漂移的雾状光斑，给深色底加「呼吸感」 —— */
+.aurora-layer {
+  position: fixed;
+  inset: 0;
+  z-index: -10;
+  pointer-events: none;
+  overflow: hidden;
+  /* 动图感：两团柔光缓慢漂移 + 一道极淡的斜向光带循环扫过 */
+  background-image:
+    radial-gradient(56vw 56vw at 10% 6%, rgb(var(--c-accent) / 0.12), transparent 68%),
+    radial-gradient(50vw 50vw at 90% 2%, rgb(var(--c-accent2) / 0.1), transparent 68%),
+    linear-gradient(118deg, transparent 42%, rgb(var(--c-accent3) / 0.09) 50%, transparent 58%);
+  background-size: 100% 100%, 100% 100%, 260% 260%;
+  background-repeat: no-repeat;
+  animation:
+    aurora-drift 42s ease-in-out infinite alternate,
+    aurora-sweep 26s linear infinite;
+  will-change: transform, background-position;
+}
+@keyframes aurora-drift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to   { transform: translate3d(-2.2vw, 1.4vw, 0) scale(1.05); }
+}
+@keyframes aurora-sweep {
+  from { background-position: 0 0, 0 0, 120% 0%; }
+  to   { background-position: 0 0, 0 0, -60% 0%; }
+}
+.aurora-layer::before,
+.aurora-layer::after {
+  content: '';
+  position: absolute;
+  width: 55vw;
+  height: 55vw;
+  border-radius: 9999px;
+  filter: blur(90px);
+}
+.aurora-layer::before {
+  top: -18vw;
+  left: -12vw;
+  background: radial-gradient(circle, rgb(var(--c-accent) / 0.45), transparent 68%);
+  animation: aurora-a 26s ease-in-out infinite;
+}
+.aurora-layer::after {
+  top: -6vw;
+  right: -16vw;
+  background: radial-gradient(circle, rgb(var(--c-accent2) / 0.32), transparent 68%);
+  animation: aurora-b 34s ease-in-out infinite;
+}
+/* 亮色主题下压低亮度，避免白底上糊成一片粉 */
+:root:not(.dark) .aurora-layer::before { opacity: 0.35; }
+:root:not(.dark) .aurora-layer::after { opacity: 0.28; }
+
+@keyframes aurora-a {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50%      { transform: translate3d(6vw, 4vw, 0) scale(1.18); }
+}
+@keyframes aurora-b {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1.1); }
+  50%      { transform: translate3d(-5vw, 5vw, 0) scale(0.95); }
+}
+
+/* —— 首页整页背景图：两张图轮换 + 一层随主题变浓淡的纱 ——
+   图层顺序（从下到上）：元素自身的《海贼王》图 → ::after 的《哪吒2》图（靠 opacity
+   交叉淡入）→ ::before 的纱。纱必须够浓：标题文字是直接压在背景上的（卡片有自己的
+   底色不受影响），纱太薄就变成「为了看背景而看不清字」。 */
+.page-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -9;                    /* 垫在极光层之上、所有内容之下 */
+  pointer-events: none;
+  background-image: url('/bg/luffy.jpg');
+  background-size: cover;
+  background-position: center 28%;
+  background-repeat: no-repeat;
+  /* 动图感：整张背景极缓慢地推近 + 平移（Ken Burns），避免静止呆板 */
+  animation: backdrop-breathe 46s ease-in-out infinite alternate;
+  will-change: transform;
+}
+.page-backdrop::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url('/bg/nezha.jpg');
+  background-size: cover;
+  background-position: center 30%;
+  background-repeat: no-repeat;
+  opacity: 0;
+  animation: bg-swap 32s ease-in-out infinite;
+}
+.page-backdrop::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: linear-gradient(rgb(var(--c-page) / var(--bg-veil-a)), rgb(var(--c-page) / var(--bg-veil-b)));
+}
+/* 前半段显示第一张、后半段显示第二张，中间各 2 秒交叉淡入；切换时同时缓慢缩放，产生镜头推移感 */
+@keyframes bg-swap {
+  0%, 38%  { opacity: 0; transform: scale(1.04) translate3d(0, 0, 0); }
+  50%, 88% { opacity: 1; transform: scale(1.1) translate3d(-1.2%, -0.8%, 0); }
+  100%     { opacity: 0; transform: scale(1.04) translate3d(0, 0, 0); }
+}
+/* 整页背景的缓慢呼吸：缩放 + 轻微平移 */
+@keyframes backdrop-breathe {
+  from { transform: scale(1.02) translate3d(0, 0, 0); }
+  to   { transform: scale(1.08) translate3d(-1.2%, -1.6%, 0); }
+}
+/* 尊重系统「减少动态效果」设置 */
+@media (prefers-reduced-motion: reduce) {
+  .page-backdrop,
+  .page-backdrop::after,
+  .aurora-layer,
+  .aurora-layer::before,
+  .aurora-layer::after {
+    animation: none !important;
+  }
+}
+
+/* —— 海报卡：悬停上浮 + 霓虹光环 —— */
+.poster {
+  @apply relative overflow-hidden rounded-xl border border-line bg-card;
+  @apply transition-[transform,border-color,box-shadow] duration-300;
+  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60;
+}
+.poster:hover,
+.poster:focus-visible {
+  transform: translateY(-4px);
+  border-color: rgb(var(--c-accent) / 0.55);
+  box-shadow:
+    0 14px 34px -12px rgb(0 0 0 / 0.75),
+    0 0 0 1px rgb(var(--c-accent) / 0.22),
+    0 0 26px -4px rgb(var(--c-accent) / 0.35);
+}
+
+/* —— 玻璃质感面板（导航、浮层） —— */
+.glass {
+  background-color: rgb(var(--c-surface) / 0.72);
+  backdrop-filter: blur(14px) saturate(140%);
+  border-color: rgb(var(--c-line) / 0.9);
+}
+
+/* —— 选中态胶囊（筛选项/分类标签）：实心霓虹底 + 外发光 —— */
+.chip-active {
+  background: rgb(var(--c-accent));
+  color: rgb(var(--c-on-accent));
+  box-shadow: 0 0 16px -2px rgb(var(--c-accent) / 0.8);
+}
+
+/* —— 海报上浮现的播放圆钮 —— */
+.play-fab {
+  background: rgb(var(--c-accent) / 0.92);
+  color: rgb(var(--c-on-accent));
+  box-shadow: 0 0 22px -2px rgb(var(--c-accent) / 0.85);
+}
+
+/* —— 区块标题：左侧青→品红渐变竖条（颜色由调用方给，便于同一套头同时用于标题与说明行） —— */
+.section-heading {
+  @apply flex items-center gap-2 text-sm font-medium;
+}
+.section-heading::before {
+  content: '';
+  @apply block h-4 w-1 shrink-0 rounded-full;
+  background: linear-gradient(to bottom, rgb(var(--c-accent)), rgb(var(--c-accent2)));
+}
+
+/* —— 入场动画：卡片逐个升起（配合内联 animation-delay 做错峰） —— */
+.anim-rise {
+  animation: rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* —— 骨架屏：横向扫光（比 animate-pulse 更像「正在加载」） —— */
+.skeleton {
+  background-color: rgb(var(--c-chip));
+  background-image: linear-gradient(
+    100deg,
+    transparent 25%,
+    rgb(var(--c-line) / 0.7) 50%,
+    transparent 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+
+/* —— Hero 轮播 —— */
+.hero-shell {
+  @apply relative overflow-hidden rounded-2xl border border-line;
+  isolation: isolate;
+}
+/* 底部向上渐隐：保证标题压在图上仍读得清 */
+.hero-scrim {
+  background: linear-gradient(
+    to top,
+    rgb(var(--c-page)) 0%,
+    rgb(var(--c-page) / 0.82) 26%,
+    rgb(var(--c-page) / 0.3) 62%,
+    rgb(var(--c-page) / 0.05) 100%
+  );
+}
+/* 选中帧缓慢推近（Ken Burns），让静态海报也有动感 */
+.anim-kenburns {
+  animation: kenburns 9s ease-out both;
+}
+@keyframes kenburns {
+  from { transform: scale(1.02); }
+  to   { transform: scale(1.12) translateY(-1.5%); }
+}
+.hero-arrow {
+  @apply absolute top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full;
+  @apply text-white opacity-0 transition-opacity duration-200;
+  background: rgb(4 6 16 / 0.5);
+  backdrop-filter: blur(6px);
+}
+.hero-arrow:hover {
+  background: rgb(var(--c-accent) / 0.9);
+  color: rgb(var(--c-on-accent));
+}
+.hero-shell:hover .hero-arrow,
+.hero-arrow:focus-visible {
+  opacity: 1;
+}
+/* 触屏没有 hover：箭头常显，否则用户找不到下一张 */
+@media (hover: none) {
+  .hero-arrow { opacity: 1; }
+}
+/* 自动轮播进度条：每切一张重新播放（靠 key={index} 触发重挂载） */
+.hero-progress {
+  @apply absolute bottom-0 left-0 h-0.5 w-full;
+  transform-origin: left center;
+  background: linear-gradient(90deg, rgb(var(--c-accent)), rgb(var(--c-accent2)));
+  animation-name: bar;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
+@keyframes bar {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+/* —— 无障碍：装饰性动效在「减少动态效果」下停掉，功能性反馈（spinner 等）保留 —— */
+@media (prefers-reduced-motion: reduce) {
+  .aurora-layer::before,
+  .aurora-layer::after,
+  .page-backdrop::after,
+  .anim-rise,
+  .anim-kenburns,
+  .skeleton,
+  .hero-progress {
+    animation: none !important;
+  }
+  /* 背景只在第一张上停住，不做轮换 */
+  .page-backdrop::after { opacity: 0; }
+  .anim-rise { opacity: 1; transform: none; }
+  .poster:hover,
+  .poster:focus-visible { transform: none; }
 }

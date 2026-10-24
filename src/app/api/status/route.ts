@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { isPasswordConfigured, sessionFromCookieHeader } from '@/lib/auth';
+import { isPasswordConfigured, sessionFromRequest } from '@/lib/auth';
+import { isEmailConfigured, isSmsConfigured } from '@/lib/otp';
 import { getEnvSources } from '@/lib/env-sources';
 import { getEnvLiveSources } from '@/lib/env-live-sources';
 import { getEnvSubscriptions } from '@/lib/env-subscriptions';
@@ -8,15 +9,29 @@ import { getEnvImageMode } from '@/lib/env-image-mode';
 
 export const runtime = 'nodejs';
 
+/** 登录能力：前端据此把没开通的按钮变成「会说明原因」的按钮，而不是死按钮 */
+function authCapabilities() {
+  return {
+    email: isEmailConfigured(),
+    sms: isSmsConfigured(),
+    wechat: Boolean(process.env.WECHAT_APP_ID && process.env.WECHAT_APP_SECRET),
+    qq: Boolean(process.env.QQ_APP_ID && process.env.QQ_APP_KEY),
+    device: true,
+  };
+}
+
 /** 站点状态：客户端据此决定是否弹出登录框 / 提示管理员配置密码，并获取预置采集站与预置直播源 */
 export async function GET(req: Request) {
   const passwordRequired = isPasswordConfigured();
-  const verified = passwordRequired && sessionFromCookieHeader(req.headers.get('cookie'));
+  // 访客口令登录不依赖 PASSWORD，只要会话 cookie 或 Bearer token 有效即视为已登录
+  const verified = sessionFromRequest(req);
   return NextResponse.json({
     passwordRequired,
     verified,
     // 构建时由 next.config.ts 从 package.json 注入
     version: process.env.APP_VERSION || 'dev',
+    // 登录能力开关（邮箱/短信/微信/QQ/本机免密）
+    authCapabilities: authCapabilities(),
     // 部署者通过 DEFAULT_SOURCES 预置的采集站
     defaultSources: getEnvSources(),
     // 部署者通过 DEFAULT_LIVE_SOURCES 预置的直播源（M3U 订阅）

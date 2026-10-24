@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import { guardRequest } from '@/lib/api-guard';
 import { cmsRequestHeaders, parseDetail, parseDetailPageHtml } from '@/lib/cms-parser';
 import { fetchUpstream, getCache, setCache } from '@/lib/fetch-utils';
 import { checkUpstreamAllowed } from '@/lib/ssrf';
@@ -26,9 +25,6 @@ function parseSource(raw: string | null): SourceConfig | null {
  * 拿不到播放地址时（部分源需要爬详情页）降级到 detail 页 HTML 提取。
  */
 export async function GET(req: Request) {
-  const guarded = guardRequest(req);
-  if (guarded) return guarded;
-
   const url = new URL(req.url);
   const id = (url.searchParams.get('id') || '').trim();
   const source = parseSource(url.searchParams.get('source'));

@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import { guardRequest } from '@/lib/api-guard';
 import { getCache, setCache } from '@/lib/fetch-utils';
 import { withHostLimit } from '@/lib/host-gate';
 import { probeQuality } from '@/lib/quality-probe';
@@ -64,9 +63,6 @@ async function runWithConcurrency(
  * - `?stream=1` 以 NDJSON 逐条推送——展开来源面板时先到的先亮，不必等最慢的源。
  */
 export async function POST(req: Request) {
-  const guarded = guardRequest(req);
-  if (guarded) return guarded;
-
   let body: QualityBody;
   try {
     body = (await req.json()) as QualityBody;

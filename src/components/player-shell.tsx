@@ -292,6 +292,9 @@ export function PlayerShell({
   };
 
   /** 换集：重置每集状态并切换到新 HLS 源（不重建 ArtPlayer）。 */
+  /** 是否为 HLS 播放列表；非 HLS（如本地 mp4 直链）走原生播放，不经 hls.js */
+  const isHlsUrl = (u: string) => /\.m3u8(\?|#|$)/i.test(u);
+
   const loadEpisode = (targetUrl: string) => {
     if (!targetUrl) return;
     mediaHealthyRef.current = true;
@@ -306,6 +309,15 @@ export function PlayerShell({
     setShowPoster(true);
     const art = artRef.current;
     if (!art) return;
+    if (!isHlsUrl(targetUrl)) {
+      // 直链（本地 mp4/mkv 等）：交给 <video> 原生播放，hls.js 解析不了这类地址
+      hlsRef.current?.destroy();
+      hlsRef.current = null;
+      currentMediaUrlRef.current = targetUrl;
+      art.video.src = targetUrl;
+      art.play?.();
+      return;
+    }
     setupHls(art.video, targetUrl, true);
   };
 
@@ -332,7 +344,8 @@ export function PlayerShell({
     const art = new Artplayer({
       container: containerRef.current,
       url: initialUrl,
-      type: 'm3u8',
+      // 本地 mp4 等直链用原生播放；只有 m3u8 才交给 hls.js
+      type: isHlsUrl(initialUrl) ? 'm3u8' : 'mp4',
       volume: 0.8,
       autoplay: true,
       pip: true,

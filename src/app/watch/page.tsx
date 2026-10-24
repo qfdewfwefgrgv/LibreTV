@@ -16,6 +16,7 @@ const PlayerShell = dynamic(() => import('@/components/player-shell').then((m) =
   ),
 });
 import { EmptyState, LoadingState, Spinner } from '@/components/states';
+import { DoubanCard } from '@/components/video-card';
 import { SwitchSourceModal } from '@/components/switch-source';
 import { enqueueDownload } from '@/components/download-manager';
 import { Icon } from '@/components/icon';
@@ -49,7 +50,7 @@ function WatchContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const store = useAppStore();
-  const { verified } = useAuth();
+  const { verified, openLogin } = useAuth();
 
   const sourceKey = searchParams.get('source') || '';
   const vodId = searchParams.get('id') || '';
@@ -69,7 +70,7 @@ function WatchContent() {
   const detailQuery = useQuery({
     queryKey: ['detail', sourceKey, vodId, source?.url],
     queryFn: ({ signal }) => api.detail(vodId, source!, signal),
-    enabled: Boolean(source && vodId && verified),
+    enabled: Boolean(source && vodId),
     staleTime: 5 * 60_000,
   });
 
@@ -112,7 +113,7 @@ function WatchContent() {
 
   // 写入观看历史（进入页面即记录，进度后续增量更新）
   useEffect(() => {
-    if (!verified || !sourceKey || !currentUrl) return;
+    if (!sourceKey || !currentUrl) return;
     const timer = setTimeout(() => {
       upsertHistory({
         sourceKey,
@@ -129,7 +130,7 @@ function WatchContent() {
     }, 2000);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [verified, sourceKey, vodId, currentIndex, videoTitle, currentUrl]);
+  }, [sourceKey, vodId, currentIndex, videoTitle, currentUrl]);
 
   // 播放中与暂停时的进度落盘逻辑一致，共用同一回调
   const handleProgress = useCallback(
@@ -173,13 +174,19 @@ function WatchContent() {
 
   const orderedEpisodes = reversed ? [...episodes].map((_, i) => episodes.length - 1 - i) : episodes.map((_, i) => i);
 
-  if (!verified) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-faint text-sm">等待访问验证...</p>
-      </div>
-    );
-  }
+  // 「猜你喜欢」：按当前这部片的类型推一批同类型的豆瓣条目，换片看时那栏跟着变。
+  // 类型从详情接口的 typeName/area 加片名关键词判断，判断不出就退回「热门」。
+  const likes = useMemo(
+    () => pickGenre(detailQuery.data?.videoInfo, videoTitle, episodes.length),
+    [detailQuery.data, videoTitle, episodes.length]
+  );
+  const similar = useQuery({
+    queryKey: ['likes', likes.type, likes.tag],
+    queryFn: ({ signal }) => api.douban(likes.type, likes.tag, 0, 12, signal),
+    // 同类型的结果短时间内不会变，缓存久一点，省得每次进播放页都打豆瓣
+    staleTime: 30 * 60_000,
+    enabled: store.doubanEnabled && Boolean(videoTitle),
+  });
 
   if (!source) {
     return (
@@ -213,6 +220,11 @@ function WatchContent() {
               className="btn-ghost btn-sm"
               onClick={() => {
                 if (!currentUrl) return;
+                // 下载需要登录（访客/账号会话均可）
+                if (!verified) {
+                  openLogin();
+                  return;
+                }
                 enqueueDownload({
                   url: currentUrl,
                   // 多集才带集数后缀；单集影片（含电影）文件名就是纯标题
@@ -301,8 +313,10 @@ function WatchContent() {
           {/* 剧集侧栏 */}
           <aside className="bg-surface-raised rounded-lg p-3 h-fit">
             <div className="flex items-center justify-between gap-2 mb-2.5">
-              <h2 className="text-sm font-semibold text-content">
-                剧集列表{episodes.length > 0 && `（${episodes.length}）`}
+              {/* 栏目标题直接显示片名：单集电影写「剧集列表（1）」没有任何信息量。
+                  当前集数在页面顶部已经有「第 x/y 集」，这里不必再重复计数 */}
+              <h2 className="text-sm font-semibold text-content truncate" title={videoTitle}>
+                {videoTitle}
               </h2>
               {/* 排列开关紧贴它所作用的列表：放在这里才看得出它管的是这一栏的顺序 */}
               {episodes.length > 1 && (
@@ -343,6 +357,27 @@ function WatchContent() {
             </p>
           </aside>
         </div>
+
+        {/* 猜你喜欢：按当前类型推同类型的片；点卡片去搜该片名（与首页推荐同一套行为） */}
+        {store.doubanEnabled && (similar.data?.items.length ?? 0) > 0 && (
+          <section aria-label="猜你喜欢" className="mt-8">
+            <div className="flex items-center gap-2 mb-3">
+              <h2 className="section-heading text-content">猜你喜欢</h2>
+              <span className="chip bg-chip text-muted max-w-[55%] truncate">
+                因为你在看「{videoTitle}」· {likes.tag}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2.5">
+              {similar.data!.items.slice(0, 12).map((item) => (
+                <DoubanCard
+                  key={item.id}
+                  item={item}
+                  onClick={() => router.push(`/?s=${encodeURIComponent(item.title)}`)}
+                />
+              ))}
+            </div>
+          </section>
+        )}
       </main>
 
       {switchOpen && (
@@ -407,4 +442,31 @@ function HomeButton() {
       <Icon name="home" className="w-5 h-5" />
     </Link>
   );
+}
+
+/**
+ * 把「当前看的这部片」归到豆瓣推荐用的一个 tag 上。
+ * 依据：详情接口的 typeName / area 加上片名关键词（很多源只在片名里写类型，如「… 国语版」）；
+ * 集数 > 1 视为剧集，否则视为电影 —— type 决定了可用哪些 tag（电影的 tag 集与剧集不同）。
+ * 判断不出就给「热门」，保证那一栏永远有内容。
+ */
+function pickGenre(
+  info: { typeName?: string; area?: string } | undefined,
+  title: string,
+  episodeCount: number
+): { type: 'movie' | 'tv'; tag: string } {
+  const type: 'movie' | 'tv' = episodeCount > 1 ? 'tv' : 'movie';
+  const hay = `${info?.typeName ?? ''} ${info?.area ?? ''} ${title}`;
+  const has = (...words: string[]) => words.some((w) => hay.includes(w));
+
+  if (has('动画', '动漫', '剧场版', '番')) return { type, tag: type === 'tv' ? '日本动画' : '动画' };
+  if (has('综艺', '真人秀', '脱口秀')) return { type: 'tv', tag: '综艺' };
+  if (has('纪录')) return { type: 'tv', tag: '纪录片' };
+  if (has('日本', '日剧')) return { type, tag: type === 'tv' ? '日剧' : '日本' };
+  if (has('韩国', '韩剧')) return { type, tag: type === 'tv' ? '韩剧' : '韩国' };
+  if (has('美国', '欧美', '美剧')) return { type, tag: type === 'tv' ? '美剧' : '欧美' };
+  if (has('英国', '英剧')) return { type, tag: type === 'tv' ? '英剧' : '欧美' };
+  if (has('香港', '港剧', '港产')) return { type, tag: type === 'tv' ? '港剧' : '华语' };
+  if (has('国产', '华语', '中国', '内地', '大陆')) return { type, tag: type === 'tv' ? '国产剧' : '华语' };
+  return { type, tag: '热门' };
 }

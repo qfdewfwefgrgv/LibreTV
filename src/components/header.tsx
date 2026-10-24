@@ -9,12 +9,16 @@ import { HistoryPanel } from './history-panel';
 import { requestShowDownloadManager } from './download-manager';
 import { Icon } from './icon';
 import { SearchHistoryDropdown, useSearchHistory } from './search-history';
+import { CategoryNav } from './category-nav';
+import { UserMenu } from './user-menu';
+import { useAuth } from './auth';
 import { cn } from '@/lib/utils';
 
-/** 顶部导航：Logo、搜索框（首页外）、历史、设置 */
+/** 顶部导航：Logo、分类菜单、搜索框（首页外）、历史、设置 */
 export function Header({ showSearch = false }: { showSearch?: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
+  const { verified, openLogin } = useAuth();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -37,22 +41,25 @@ export function Header({ showSearch = false }: { showSearch?: boolean }) {
 
   return (
     <>
-      <header className="sticky top-0 z-40 bg-surface/90 backdrop-blur border-b border-line">
-        <div className="max-w-6xl mx-auto px-4 h-14 flex items-center gap-3">
+      <header className="glass sticky top-0 z-40 border-b">
+        <div className="max-w-6xl lg:max-w-7xl mx-auto px-4 h-14 flex items-center gap-3">
           <Link href="/" aria-label="LibreTV 首页" className="flex items-center shrink-0">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/icons/icon-512.png" alt="LibreTV" className="w-7 h-7 rounded-lg" />
+            <img src="/icons/icon-512.png" alt="LibreTV" className="w-7 h-7 rounded-lg transition-transform hover:scale-105" />
           </Link>
+
+          {/* 分类菜单：手机隐藏、平板按宽度裁剪（电脑端改用左侧竖排，见 side-category-nav.tsx） */}
+          <CategoryNav />
 
           {showSearch && (
             <form
-              className="flex-1 max-w-xl hidden sm:block"
+              className="hidden md:block shrink-0 w-44 lg:w-auto lg:flex-1"
               onSubmit={(e) => {
                 e.preventDefault();
                 submitSearch(query);
               }}
             >
-              <div ref={searchHistory.containerRef} className="relative">
+              <div ref={searchHistory.containerRef} className="relative w-full lg:max-w-xl lg:mx-auto">
                 <input
                   className={cn(
                     'input w-full h-9',
@@ -107,12 +114,22 @@ export function Header({ showSearch = false }: { showSearch?: boolean }) {
             <IconButton label="观看历史" onClick={() => setHistoryOpen(true)}>
               <Icon name="clock" />
             </IconButton>
-            <IconButton label="下载管理" onClick={requestShowDownloadManager}>
+            <IconButton
+              label="下载管理"
+              onClick={() => {
+                if (!verified) {
+                  openLogin();
+                  return;
+                }
+                requestShowDownloadManager();
+              }}
+            >
               <Icon name="download" />
             </IconButton>
             <IconButton label="设置" onClick={() => setSettingsOpen(true)}>
               <Icon name="gear" />
             </IconButton>
+            <UserMenu />
           </nav>
         </div>
       </header>

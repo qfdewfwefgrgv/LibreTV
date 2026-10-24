@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { guardRequest, jsonError } from '@/lib/api-guard';
+import { jsonError } from '@/lib/api-guard';
 import { checkLiveUrlAllowed } from '@/lib/ssrf';
 import { fetchUpstream } from '@/lib/fetch-utils';
 import { getLiveCache, setLiveCache } from '@/lib/live-cache';
@@ -48,9 +48,6 @@ function toM3uText(playlist: LivePlaylistResponse): string {
  * - format=m3u 返回解析后的标准 M3U 文本（订阅导出）。
  */
 export async function GET(req: Request) {
-  const guarded = guardRequest(req);
-  if (guarded) return guarded;
-
   const sp = new URL(req.url).searchParams;
   const url = sp.get('url')?.trim();
   if (!url) return jsonError('缺少 url 参数', 400);

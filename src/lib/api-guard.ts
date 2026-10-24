@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { isPasswordConfigured, sessionFromCookieHeader } from './auth';
+import { isPasswordConfigured, sessionFromRequest } from './auth';
 
-/** API Route 共享守卫：未配置密码返回 503，未登录返回 401 */
+/** API Route 共享守卫：未配置密码返回 503，未登录返回 401。兼容 Cookie 与 Authorization: Bearer */
 export function guardRequest(req: Request): NextResponse | null {
   if (!isPasswordConfigured()) {
     return NextResponse.json(
@@ -9,7 +9,7 @@ export function guardRequest(req: Request): NextResponse | null {
       { status: 503 }
     );
   }
-  if (!sessionFromCookieHeader(req.headers.get('cookie'))) {
+  if (!sessionFromRequest(req)) {
     return NextResponse.json({ error: '未登录' }, { status: 401 });
   }
   return null;

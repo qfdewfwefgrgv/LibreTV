@@ -70,12 +70,14 @@ function extractAttrs(attrText: string): Record<string, string> {
 
 /**
  * 解析 XMLTV 内容。string 直接入扫描；Buffer 自动识别 gzip（1f 8b 魔数）解压。
- * 只保留 `[now, now + windowMs]` 窗口内的节目，按频道分组并按开播时间排序。
+ * 只保留 `[now - pastMs, now + windowMs]` 窗口内的节目，按频道分组并按开播时间排序。
+ * pastMs 供「近期回放」回看历史节目使用，默认 0（只看当前与未来）。
  */
 export function parseXmltv(
   content: string | Buffer,
   windowMs: number = DEFAULT_WINDOW_MS,
-  now: number = Date.now()
+  now: number = Date.now(),
+  pastMs: number = 0
 ): Map<string, EpgProgram[]> {
   let text: string;
   if (Buffer.isBuffer(content)) {
@@ -89,6 +91,7 @@ export function parseXmltv(
 
   const result = new Map<string, EpgProgram[]>();
   const windowEnd = now + windowMs;
+  const windowStart = now - pastMs;
 
   PROGRAMME_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
@@ -102,7 +105,7 @@ export function parseXmltv(
     const stop = parseXmltvTime(attrs['stop'] || '');
     if (!Number.isFinite(start) || !Number.isFinite(stop)) continue;
     // 窗口裁剪：节目已完全播完或完全在未来窗口之外则丢弃
-    if (stop <= now || start >= windowEnd) continue;
+    if (stop <= windowStart || start >= windowEnd) continue;
 
     const titleMatch = inner.match(TITLE_RE);
     const descMatch = inner.match(DESC_RE);

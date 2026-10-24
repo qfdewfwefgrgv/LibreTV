@@ -273,7 +273,14 @@ export function AggregatedCard({
   };
 
   return (
-    <div className={cn('card', !multi && 'hover:scale-[1.02] hover:shadow-md', multi && expanded && 'ring-1 ring-accent/40')}>
+    <div
+      className={cn(
+        'card group transition-all duration-300',
+        'hover:-translate-y-0.5 hover:border-accent/45 hover:shadow-lg',
+        // 展开中的卡片用环标示状态（多源卡展开后不再算「悬停」）
+        multi && expanded && 'ring-1 ring-accent/40'
+      )}
+    >
       {/* 不用 h-full：展开面板需要撑高卡片，等高裁切会让面板不可见 */}
       <div
         className="flex h-full cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60"
@@ -289,13 +296,13 @@ export function AggregatedCard({
         }}
       >
         {showImg ? (
-          <div className="relative flex-shrink-0 w-[105px] sm:w-[120px] aspect-[2/3] bg-chip">
+          <div className="relative flex-shrink-0 w-[105px] sm:w-[120px] aspect-[2/3] overflow-hidden bg-chip">
             <SmartImage
               url={group.pic}
               mode={imageProxyMode}
               customProxy={customImageProxy}
               alt={group.name}
-              className="absolute inset-0 h-full w-full object-cover"
+              className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
               onExhausted={() => setImgFailed(true)}
             />
             <div className="absolute inset-0 bg-gradient-to-r from-black/30 to-transparent" />
@@ -320,13 +327,13 @@ export function AggregatedCard({
 
         <div className="p-2.5 flex flex-col flex-grow min-w-0">
           <div className="flex-grow">
-            <h3 className="font-semibold text-sm text-content mb-1.5 line-clamp-2" title={group.name}>
+            <h3 className="font-semibold text-sm text-content mb-1.5 line-clamp-2 transition-colors group-hover:text-accent" title={group.name}>
               {group.name}
             </h3>
             <div className="flex flex-wrap gap-1 mb-1.5">
               {group.typeName && <span className="tag bg-accent/15 text-accent">{group.typeName}</span>}
-              {group.year && <span className="tag bg-purple-500/15 text-purple-600 dark:text-purple-300">{group.year}</span>}
-              {adult && <span className="tag bg-pink-500/15 text-pink-600 dark:text-pink-400">(18+)</span>}
+              {group.year && <span className="tag bg-accent3/15 text-accent3">{group.year}</span>}
+              {adult && <span className="tag bg-accent2/15 text-accent2">(18+)</span>}
             </div>
             <p className="text-xs text-muted line-clamp-2 mb-2">{group.remarks || '暂无介绍'}</p>
           </div>
@@ -390,6 +397,7 @@ export function AggregatedCard({
                   )}
                   onClick={(e) => {
                     e.stopPropagation();
+                    // 所有画质来源对访客和未登录用户开放播放
                     onOpen(item);
                   }}
                   aria-label={`使用 ${item.sourceName} 播放`}
@@ -482,54 +490,104 @@ export function VideoCard({ item, onClick }: { item: SearchResultItem; onClick: 
   );
 }
 
-/** 豆瓣推荐卡片（无来源徽章，点击直接搜索） */
-export function DoubanCard({ item, onClick }: { item: { title: string; cover: string; rating?: string }; onClick: () => void }) {
+/** 豆瓣/影库海报卡（无来源徽章，点击直接搜索或开详情） */
+export function DoubanCard({
+  item,
+  onClick,
+}: {
+  item: { title: string; cover: string; rating?: string; kind?: string; year?: string; area?: string; tags?: string[]; summary?: string };
+  onClick: () => void;
+}) {
   const imageProxyMode = useAppStore((s) => s.imageProxyMode);
   const customImageProxy = useAppStore((s) => s.customImageProxy);
   const [imgFailed, setImgFailed] = useState(false);
   useEffect(() => setImgFailed(false), [item.cover]);
 
   return (
-    <div
-      className="card cursor-pointer hover:scale-[1.03] hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
-      role="button"
-      tabIndex={0}
-      onClick={onClick}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          // 阻止空格触发页面滚动（AggregatedCard 已是此写法，此处对齐）
-          e.preventDefault();
-          onClick();
-        }
-      }}
-    >
-      <div className="relative aspect-[2/3] bg-chip">
+    <div className="group relative">
+      <div
+        className="poster cursor-pointer"
+        role="button"
+        tabIndex={0}
+        onClick={onClick}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            // 阻止空格触发页面滚动（AggregatedCard 已是此写法，此处对齐）
+            e.preventDefault();
+            onClick();
+          }
+        }}
+      >
+        <div className="relative aspect-[2/3] overflow-hidden bg-chip">
         {item.cover && !imgFailed ? (
           <SmartImage
             url={item.cover}
             mode={imageProxyMode}
             customProxy={customImageProxy}
             alt={item.title}
-            className="w-full h-full object-cover"
+            className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.06]"
             onExhausted={() => setImgFailed(true)}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center bg-chip">
+          <div className="flex h-full w-full items-center justify-center bg-chip">
             <svg className="w-8 h-8 text-faint" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 4v16m10-16v16M3 6a1 1 0 011-1h1a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6zm4 0a1 1 0 011-1h1a1 1 0 011 1v12a1 1 0 01-1 1h-1a1 1 0 01-1-1V6zm8 0a1 1 0 011-1h1a1 1 0 011 1v12a1 1 0 01-1 1h-1a1 1 0 01-1-1V6zm4 0a1 1 0 011-1h1a1 1 0 011 1v12a1 1 0 01-1 1h-1a1 1 0 01-1-1V6z" />
             </svg>
           </div>
         )}
+
+        {/* 底部渐隐：标题压在图上也能读清 */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/85 via-black/35 to-transparent" />
+
+        {/* 悬停/聚焦才浮现的播放钮：不占位、不吃点击（整张卡已经是按钮） */}
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-300 group-hover:opacity-100 group-focus-visible:opacity-100">
+          <span className="play-fab flex h-10 w-10 items-center justify-center rounded-full">
+            <svg className="h-5 w-5 translate-x-[1px]" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          </span>
+        </div>
+
         {item.rating && (
-          <span className={cn('absolute top-1.5 right-1.5 tag bg-black/70 text-rating font-medium')}>
+          <span className="tag absolute right-1.5 top-1.5 bg-black/70 font-medium text-accent2 backdrop-blur">
             ★ {item.rating}
           </span>
         )}
-      </div>
-      <div className="p-2">
-        <div className="text-xs font-medium text-content truncate" title={item.title}>
-          {item.title}
+
+        <div className="absolute inset-x-0 bottom-0 p-2">
+          <div className="line-clamp-2 text-xs font-medium text-white drop-shadow" title={item.title}>
+            {item.title}
+          </div>
         </div>
+        </div>
+      </div>
+
+      {/* 悬停详情浮层：模仿影视站的卡片弹层（纯展示，点击由整张卡承担） */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-1 bottom-1 z-30 translate-y-1 rounded-lg border border-line bg-surface/95 p-2 opacity-0 shadow-xl backdrop-blur-md transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100"
+      >
+        <p className="mb-1 line-clamp-1 text-xs font-semibold text-content" title={item.title}>
+          {item.title}
+        </p>
+        <div className="mb-1 flex flex-wrap items-center gap-1">
+          {item.rating && <span className="tag bg-accent/15 font-medium text-accent">★ {item.rating}</span>}
+          <span className="tag bg-chip text-muted">{item.kind || '影视'}</span>
+        </div>
+        {(item.year || item.area || item.tags?.length) && (
+          <p className="mb-1 line-clamp-1 text-[10px] text-faint">
+            {[item.year, item.area, item.tags?.join(' / ')].filter(Boolean).join(' · ')}
+          </p>
+        )}
+        <p className="mb-1.5 line-clamp-4 text-[11px] leading-relaxed text-muted">
+          {item.summary?.trim() || '点击卡片搜索片源并查看详情'}
+        </p>
+        <span className="inline-flex items-center gap-1 rounded-md bg-accent px-2 py-1 text-[11px] font-medium text-on-accent">
+          <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
+            <path d="M8 5v14l11-7z" />
+          </svg>
+          立即播放
+        </span>
       </div>
     </div>
   );

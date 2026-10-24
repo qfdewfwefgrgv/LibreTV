@@ -10,10 +10,14 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
-    # 无状态服务：观看历史在浏览器 IndexedDB、设置在 localStorage，无需挂载卷
+    # 账号数据持久化：注册账号写入 /app/data/users.json，重建容器不丢
+    volumes:
+      - libretv-data:/app/data
     environment:
       # 必填：访问密码（在 .env 中设置，缺失时 compose 启动即报错提醒）
       - PASSWORD=${PASSWORD:?请在 .env 中设置 PASSWORD}
+      # 账号数据库目录（与上面的卷对应）
+      - DATA_DIR=/app/data
       # 可选：会话/代理签名密钥（多实例部署建议显式设置：openssl rand -hex 32）
       # - PROXY_SECRET=your-secret
       # 可选：Cookie Secure 策略覆盖（true=强制开启 / false=强制关闭；不设置时按请求协议自动推导，HTTP 部署无需配置）
@@ -39,3 +43,8 @@ services:
       # - USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36
       # 可选：影视榜单推荐源（60s API）实例地址，官方公共实例有限流
       # - 60S_API_BASE=https://60s.crystelf.top
+      # 可选：访客口令（默认 libretv，访客输入该口令即可登录）
+      # - GUEST_CODE=libretv
+
+volumes:
+  libretv-data:

@@ -10,14 +10,17 @@ import { SmartImage } from './smart-image';
 import { useAppStore, resolveSource } from '@/lib/store';
 import { useToast } from './toast';
 import { cn } from '@/lib/utils';
-import { addSearchHistory } from '@/lib/db';
+import { addSearchHistory, db } from '@/lib/db';
 import { copyToClipboard } from '@/lib/clipboard';
+import { categoryFromText, recordWatchCategory } from '@/lib/watch-cats';
 import { EmptyState, ErrorState, LoadingState } from './states';
 import { useFocusTrap } from './use-focus-trap';
 import { Icon } from './icon';
 
 /**
- * 详情弹窗：剧集列表 + 排序 + 复制链接。
+ * 详情弹窗：剧集列表 + 排序 + 立即播放 + 复制链接。
+ * 「立即播放」直接进站内播放器（/watch），有观看记录就续播那一集；
+ * 「复制链接」保留给想拿原始地址去外部播放器看的人。
  * 剧集点击 → /watch 路由（URL 携带定位参数，可分享、可后退）。
  */
 
@@ -95,6 +98,9 @@ export function DetailModal({ item, onClose }: { item: SearchResultItem | null; 
 
   const play = (index: number) => {
     if (!detail || !detail.episodes[index]) return;
+    // 记录本次播放的分类，首页「猜你喜欢」据此推送同类内容
+    const category = categoryFromText(info?.typeName ?? item.typeName, item.name);
+    if (category) recordWatchCategory(category);
     addSearchHistory(item.name).catch(() => {});
     router.push(
       buildWatchUrl({
@@ -114,6 +120,25 @@ export function DetailModal({ item, onClose }: { item: SearchResultItem | null; 
     else toast('复制失败，请检查浏览器权限', 'error');
   };
 
+  /**
+   * 「立即播放」：直接进站内播放器。
+   * 有观看记录就续播上次那一集（长剧尤其需要），没有则从第 1 集开始；
+   * 读历史失败只是退回第 1 集，不该拦着用户播放，所以吞掉异常。
+   */
+  const playImmediately = async () => {
+    if (!detail || detail.episodes.length === 0) return;
+    let index = 0;
+    try {
+      const entry = await db.history.get(`${item.sourceKey}_${item.vodId}`);
+      if (entry && entry.episodeIndex >= 0 && entry.episodeIndex < detail.episodes.length) {
+        index = entry.episodeIndex;
+      }
+    } catch {
+      // 读不到记录不影响播放
+    }
+    play(index);
+  };
+
   // 备注与卡片同源，同样归一化，避免同一部剧在两处显示不同文案
   const remarks = formatRemarks(info?.remarks);
   const metaRows = [
@@ -127,7 +152,7 @@ export function DetailModal({ item, onClose }: { item: SearchResultItem | null; 
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/80 py-10 px-4 animate-fade-in"
+      className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/75 py-10 px-4 backdrop-blur-sm animate-fade-in"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -135,18 +160,20 @@ export function DetailModal({ item, onClose }: { item: SearchResultItem | null; 
       <div
         ref={panelRef}
         tabIndex={-1}
-        className="bg-surface-raised rounded-xl w-full max-w-3xl shadow-2xl animate-slide-up outline-none"
+        className="bg-surface-raised rounded-2xl border border-line w-full max-w-3xl shadow-2xl ring-1 ring-accent/15 animate-slide-up outline-none overflow-hidden"
         role="dialog"
         aria-modal="true"
         aria-label={`${item.name} 详情`}
       >
+        {/* 顶部霓虹条：和区块标题的渐变同一套 token */}
+        <div className="h-1 w-full bg-gradient-to-r from-accent via-accent3 to-accent2" aria-hidden />
         <div className="flex items-start justify-between gap-4 p-5 pb-3 border-b border-line">
           <div className="min-w-0">
             <h2 className="text-lg font-semibold text-content break-words">{item.name}</h2>
             <span className="text-sm text-faint">{item.sourceName}</span>
           </div>
           <button
-            className="p-1.5 rounded-md text-muted hover:text-content hover:bg-hover shrink-0"
+            className="p-1.5 rounded-full text-muted hover:text-content hover:bg-hover shrink-0 transition-colors"
             onClick={onClose}
             aria-label="关闭"
           >
@@ -170,7 +197,7 @@ export function DetailModal({ item, onClose }: { item: SearchResultItem | null; 
                     mode={store.imageProxyMode}
                     customProxy={store.customImageProxy}
                     alt={item.name}
-                    className="w-24 sm:w-32 aspect-[2/3] object-cover rounded-lg bg-chip shrink-0 self-center sm:self-start"
+                    className="w-24 sm:w-32 aspect-[2/3] object-cover rounded-xl ring-1 ring-line shadow-lg bg-chip shrink-0 self-center sm:self-start"
                     loading="eager"
                     onExhausted={() => setPosterFailed(true)}
                   />
@@ -210,9 +237,19 @@ export function DetailModal({ item, onClose }: { item: SearchResultItem | null; 
                       </button>
                       <span className="text-sm text-faint">共 {episodes.length} 集</span>
                     </div>
-                    <button className="btn-primary btn-sm" onClick={copyLinks}>
-                      复制链接
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {/* 复制链接降为次要动作：原来的主按钮位置留给「立即播放」，
+                          否则最显眼的入口会把用户往「拷到外部播放器」那条路上带 */}
+                      <button className="btn-ghost btn-sm" onClick={copyLinks}>
+                        复制链接
+                      </button>
+                      <button className="btn-primary btn-sm" onClick={playImmediately}>
+                        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
+                          <path d="M8 5v14l11-7z" />
+                        </svg>
+                        立即播放
+                      </button>
+                    </div>
                   </div>
                   <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-7 gap-2 max-h-[40vh] overflow-y-auto scrollbar-thin pr-1">
                     {episodes.map((_, i) => {
@@ -220,7 +257,7 @@ export function DetailModal({ item, onClose }: { item: SearchResultItem | null; 
                       return (
                         <button
                           key={realIndex}
-                          className="btn-ghost btn-sm !px-1 text-center"
+                          className="btn-ghost btn-sm !px-1 text-center transition-colors hover:border-accent/60 hover:text-accent"
                           onClick={() => play(realIndex)}
                         >
                           {realIndex + 1}

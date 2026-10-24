@@ -26,6 +26,9 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 
+# 账号数据库目录（注册信息写入 /app/data/users.json，由命名卷持久化）
+RUN mkdir -p /app/data && chown -R nextjs:nodejs /app/data
+
 USER nextjs
 
 EXPOSE 8080

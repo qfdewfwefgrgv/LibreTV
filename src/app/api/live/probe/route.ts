@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { guardRequest, jsonError } from '@/lib/api-guard';
+import { jsonError } from '@/lib/api-guard';
 import { fetchUpstreamWithMeta } from '@/lib/fetch-utils';
 import { withHostLimit } from '@/lib/host-gate';
 
@@ -488,9 +488,6 @@ function cacheSet(url: string, outcome: ProbeOutcome): void {
 }
 
 export async function POST(req: Request) {
-  const guarded = guardRequest(req);
-  if (guarded) return guarded;
-
   let body: { urls?: unknown };
   try {
     body = (await req.json()) as { urls?: unknown };

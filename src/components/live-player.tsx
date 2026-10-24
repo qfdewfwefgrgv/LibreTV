@@ -45,12 +45,20 @@ interface LivePlayerProps {
   /** 上游直播流地址（直连优先，失败自动走代理） */
   url: string;
   title: string;
+  /** 回放模式：显示进度条/倍速，不使用直播追帧参数 */
+  isReplay?: boolean;
   /** 上一台/下一台：传入时注册为播放器控制条按钮（全屏内也可操作） */
   onPrevChannel?: () => void;
   onNextChannel?: () => void;
 }
 
-export function LivePlayer({ url, title, onPrevChannel, onNextChannel }: LivePlayerProps) {
+export function LivePlayer({
+  url,
+  title,
+  isReplay = false,
+  onPrevChannel,
+  onNextChannel,
+}: LivePlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const artRef = useRef<any>(null);
@@ -150,11 +158,16 @@ export function LivePlayer({ url, title, onPrevChannel, onNextChannel }: LivePla
       const hlsConfig: Partial<HlsConfig> = {
         debug: false,
         enableWorker: true,
-        liveSyncDurationCount: 3,
-        lowLatencyMode: false,
-        backBufferLength: 30,
-        maxBufferLength: 20,
-        maxMaxBufferLength: 40,
+        // 回放：按点播处理，不追直播边缘、允许更大缓冲
+        ...(isReplay
+          ? { backBufferLength: 60, maxBufferLength: 30, maxMaxBufferLength: 60 }
+          : {
+              liveSyncDurationCount: 3,
+              lowLatencyMode: false,
+              backBufferLength: 30,
+              maxBufferLength: 20,
+              maxMaxBufferLength: 40,
+            }),
         manifestLoadingMaxRetry: 2,
         manifestLoadingRetryDelay: 1000,
         fragLoadingMaxRetry: 4,
@@ -308,7 +321,7 @@ export function LivePlayer({ url, title, onPrevChannel, onNextChannel }: LivePla
       pip: true,
       screenshot: false,
       setting: false,
-      playbackRate: false,
+      playbackRate: isReplay,
       aspectRatio: false,
       fullscreen: true,
       fullscreenWeb: true,
@@ -352,7 +365,8 @@ export function LivePlayer({ url, title, onPrevChannel, onNextChannel }: LivePla
       if (!mpegtsRef.current) setError('视频播放失败，请尝试其他频道');
     });
     art.on('ready', () => {
-      // 直播隐藏进度条（ArtPlayer 无原生 isLive 开关）
+      // 直播隐藏进度条（ArtPlayer 无原生 isLive 开关）；回放保留进度条
+      if (isReplay) return;
       try {
         const progress = art.controls?.progress as HTMLElement | undefined;
         if (progress) progress.style.display = 'none';
@@ -378,7 +392,7 @@ export function LivePlayer({ url, title, onPrevChannel, onNextChannel }: LivePla
       destroyed = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url, retryNonce, onPrevChannel, onNextChannel]);
+  }, [url, retryNonce, isReplay, onPrevChannel, onNextChannel]);
 
   return (
     <div className="relative w-full h-full">
@@ -395,11 +409,17 @@ export function LivePlayer({ url, title, onPrevChannel, onNextChannel }: LivePla
           }}
         />
       )}
-      {/* LIVE 呼吸标识 */}
+      {/* 直播/回放标识 */}
       {!error && (
         <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-black/60 px-2 py-1 rounded-full pointer-events-none">
-          <span className="live-dot" />
-          <span className="text-[10px] font-semibold text-white tracking-wider">LIVE</span>
+          {isReplay ? (
+            <span className="text-[10px] font-semibold text-accent tracking-wider">回放</span>
+          ) : (
+            <>
+              <span className="live-dot" />
+              <span className="text-[10px] font-semibold text-white tracking-wider">LIVE</span>
+            </>
+          )}
         </div>
       )}
       {/* 换台 OSD：频道名（全屏内同样可见） */}

@@ -18,11 +18,16 @@ const LivePlayer = dynamic(() => import('@/components/live-player').then((m) => 
 });
 import { LiveChannelList, type LiveChannelItem } from '@/components/live-channel-list';
 import { LiveEpgPanel } from '@/components/live-epg-panel';
+import { LiveReplayPanel } from '@/components/live-replay-panel';
 import { Spinner } from '@/components/states';
-import { useAuth } from '@/components/auth';
 import { allLiveSources, useAppStore } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { SmartImage } from '@/components/smart-image';
+
+function fmtClock(ms: number): string {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
 
 /**
  * 直播页：左侧播放器 + 频道信息 + 节目单；右侧频道侧栏。
@@ -48,7 +53,6 @@ function LiveContent() {
   const liveFavorites = useAppStore((s) => s.liveFavorites);
   const imageProxyMode = useAppStore((s) => s.imageProxyMode);
   const customImageProxy = useAppStore((s) => s.customImageProxy);
-  const { verified } = useAuth();
   const [copied, setCopied] = useState(false);
   // 移动端频道抽屉开合
   const [listOpen, setListOpen] = useState(false);
@@ -59,6 +63,13 @@ function LiveContent() {
   const currentChannelRef = useRef<LiveChannelItem | undefined>(undefined);
   /** 上一个频道：退格键/按钮一键切回（电视遥控器 back 键习惯） */
   const lastChannelRef = useRef<LiveChannelItem | null>(null);
+  /** 当前回放（非空时播放器播放回看地址，而不是直播地址） */
+  const [replay, setReplay] = useState<{
+    url: string;
+    title: string;
+    start: number;
+    stop: number;
+  } | null>(null);
 
   // 仅聚合已启用的直播源（设置 → 直播源中的勾选状态）
   const sources = useMemo(() => {
@@ -73,7 +84,7 @@ function LiveContent() {
       const results = await Promise.allSettled(sources.map((s) => api.livePlaylist(s.url)));
       return sources.map((source, i) => ({ source, result: results[i] }));
     },
-    enabled: verified && sources.length > 0,
+    enabled: sources.length > 0,
     staleTime: 10 * 60_000,
   });
 
@@ -117,6 +128,10 @@ function LiveContent() {
   useEffect(() => {
     setLogoFailed(false);
   }, [currentChannel?.url]);
+  // 换台即退出回放态（回放地址只对当前频道有效）
+  useEffect(() => {
+    setReplay(null);
+  }, [currentUrl]);
   useEffect(() => {
     currentChannelRef.current = currentChannel;
   }, [currentChannel]);
@@ -203,17 +218,6 @@ function LiveContent() {
     [selectChannel]
   );
 
-  if (!verified) {
-    return (
-      <div className="min-h-screen flex flex-col">
-        <Header />
-        <div className="flex-1 flex items-center justify-center">
-          <p className="text-faint text-sm">等待访问验证...</p>
-        </div>
-      </div>
-    );
-  }
-
   const logo = currentChannel?.logo;
   const isFavorite = currentChannel ? liveFavorites.includes(currentChannel.url) : false;
 
@@ -227,8 +231,13 @@ function LiveContent() {
             <div className="aspect-video bg-black rounded-lg overflow-hidden">
               {currentUrl ? (
                 <LivePlayer
-                  url={currentUrl}
-                  title={currentChannel?.name || '直播'}
+                  url={replay?.url ?? currentUrl}
+                  title={
+                    replay
+                      ? `${currentChannel?.name || '直播'} · 回放 ${fmtClock(replay.start)}-${fmtClock(replay.stop)}`
+                      : currentChannel?.name || '直播'
+                  }
+                  isReplay={Boolean(replay)}
                   onPrevChannel={goPrevChannel}
                   onNextChannel={goNextChannel}
                 />
@@ -247,6 +256,24 @@ function LiveContent() {
                 </div>
               )}
             </div>
+
+            {/* 回放状态条：明确当前播放的是回看而不是直播 */}
+            {replay && (
+              <div className="mt-3 flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2">
+                <span className="text-[10px] font-semibold text-warning bg-warning/15 px-1.5 py-0.5 rounded-full shrink-0">
+                  回放
+                </span>
+                <span className="text-xs text-muted truncate flex-1">
+                  {replay.title} · {fmtClock(replay.start)}-{fmtClock(replay.stop)}
+                </span>
+                <button
+                  className="text-xs text-accent hover:underline shrink-0"
+                  onClick={() => setReplay(null)}
+                >
+                  返回直播
+                </button>
+              </div>
+            )}
 
             {/* 频道信息条 */}
             {currentChannel && (
@@ -383,6 +410,17 @@ function LiveContent() {
               <section className="bg-surface-raised border border-line rounded-lg p-3 mt-3">
                 <h2 className="text-sm font-semibold text-content mb-2.5">节目单</h2>
                 <LiveEpgPanel epgUrl={currentChannel.epg} tvgId={currentChannel.tvgId} />
+              </section>
+            )}
+
+            {/* 近期回放（近三天） */}
+            {currentChannel && (
+              <section className="bg-surface-raised border border-line rounded-lg p-3 mt-3">
+                <h2 className="text-sm font-semibold text-content mb-2.5">近期回放（近 3 天）</h2>
+                <LiveReplayPanel
+                  channel={currentChannel}
+                  onPlay={(url, info) => setReplay({ url, ...info })}
+                />
               </section>
             )}
           </div>

@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import { guardRequest } from '@/lib/api-guard';
 import { cmsRequestHeaders, filterAdultResults, filterRelevantResults, normalizeTitle, parseSearchList } from '@/lib/cms-parser';
 import { fetchUpstream, getCache, setCache } from '@/lib/fetch-utils';
 import { checkUpstreamAllowed } from '@/lib/ssrf';
@@ -189,9 +188,6 @@ function aggregateOutcomes(outcomes: SourceSearchOutcome[], wd: string, filterAd
  *   最终推送聚合后的 done 事件并写入短缓存。
  */
 export async function POST(req: Request) {
-  const guarded = guardRequest(req);
-  if (guarded) return guarded;
-
   let body: SearchBody;
   try {
     body = (await req.json()) as SearchBody;
