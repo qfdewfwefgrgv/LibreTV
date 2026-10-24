@@ -8,13 +8,16 @@ import { Icon } from './icon';
 import { cn } from '@/lib/utils';
 
 /**
- * 电脑端左侧竖排分类菜单（模仿影视站常见的「贴在海报左缘」的竖排导航）。
- * 只在 lg（≥1024）出现；平板继续用顶栏横排、手机保持默认布局。
+ * 电脑端左侧竖排分类菜单。只在 lg（≥1024）出现；平板继续用顶栏横排、手机保持默认布局。
  *
- * 交互：停靠在屏幕最左缘并收起，只露出一个窄把手；
- * 鼠标移到把手上（或点击把手固定）时整条菜单向右拉出，再移开自动收回。
+ * 位置：挂在轮播容器内、占据左侧一列（不是浮在海报上）。展开时由父组件
+ * 给轮播加左内边距，把画面整体右移，菜单正好落进腾出的空白带——
+ * 这样任何时刻都不会压住轮播的高燃画面。
+ *
+ * 交互：收起时只露出贴在左缘的窄把手；鼠标移上去（或点击把手固定）
+ * 整条菜单向右拉出，移开自动收回。
  */
-export function SideCategoryNav() {
+export function SideCategoryNav({ onExpandedChange }: { onExpandedChange?: (expanded: boolean) => void }) {
   const [open, setOpen] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [pinned, setPinned] = useState(false);
@@ -24,6 +27,11 @@ export function SideCategoryNav() {
 
   // 悬停 / 菜单打开 / 点击把手固定，任一成立都保持拉出态
   const expanded = hovered || open || pinned;
+
+  // 把展开状态交给父组件：父组件据此给轮播让出左侧空白带
+  useEffect(() => {
+    onExpandedChange?.(expanded);
+  }, [expanded, onExpandedChange]);
 
   const scrollTo = (id: string) => () => {
     const el = document.getElementById(id);
@@ -79,7 +87,7 @@ export function SideCategoryNav() {
 
   return (
     <div
-      className="hidden lg:block fixed left-0 top-1/2 -translate-y-1/2 z-40"
+      className="hidden lg:block absolute left-0 top-1/2 -translate-y-1/2 z-30 w-11"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -102,8 +110,8 @@ export function SideCategoryNav() {
       {/* 拉出层：整条菜单连同「更多」面板一起向右滑出 */}
       <div
         className={cn(
-          'relative transition-transform duration-300 ease-out',
-          expanded ? 'translate-x-0' : '-translate-x-full'
+          'relative transition-[opacity,transform] duration-300 ease-out',
+          expanded ? 'translate-x-0 opacity-100' : '-translate-x-3 opacity-0 pointer-events-none'
         )}
       >
         <nav

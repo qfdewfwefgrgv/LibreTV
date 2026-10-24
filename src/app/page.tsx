@@ -57,6 +57,8 @@ function HomeContent() {
   const [detailItem, setDetailItem] = useState<SearchResultItem | null>(null);
   /** 流式搜索中已结算的源（data 就绪前用于增量渲染） */
   const [streamedOutcomes, setStreamedOutcomes] = useState<SourceSearchOutcome[]>([]);
+  /** 左侧分类菜单是否拉出：拉出时轮播让出左侧空白带，避免菜单压住画面 */
+  const [sideNavOpen, setSideNavOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // URL 驱动搜索：?s 变化时回填输入框
@@ -368,9 +370,15 @@ function HomeContent() {
 
         {/* 顶部大轮播：本地影库优先（点开即播），影库为空时退回豆瓣热门（点了就搜） */}
         {!urlQuery && heroItems.length > 0 && (
-          <div className="relative">
-            {/* 电脑端左侧竖排分类：停靠屏幕左缘，悬停/点击向右拉出 */}
-            <SideCategoryNav />
+          <div
+            className={cn(
+              'relative transition-[padding] duration-300 ease-out',
+              // 收起时留窄带容纳把手；拉出时加宽，轮播画面随之右移，不会被压住
+              sideNavOpen ? 'lg:pl-14' : 'lg:pl-4'
+            )}
+          >
+            {/* 电脑端左侧竖排分类：占据让出的空白带，悬停/点击向右拉出 */}
+            <SideCategoryNav onExpandedChange={setSideNavOpen} />
             <HeroCarousel items={heroItems} />
           </div>
         )}
