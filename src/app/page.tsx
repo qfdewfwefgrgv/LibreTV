@@ -1,0 +1,573 @@
+'use client';
+
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
+import { Header } from '@/components/header';
+import { ClassicRow, GuomanRow, LocalLibraryRow, RecommendSection } from '@/components/douban-section';
+import { ForYouRow } from '@/components/for-you';
+import { DetailModal } from '@/components/detail-modal';
+import { AggregatedCard, aggregateResults } from '@/components/video-card';
+import { HeroCarousel, type HeroItem } from '@/components/hero-carousel';
+import { CategoryChips, SideCategoryNav } from '@/components/side-category-nav';
+import { useAppStore, resolveSource, isInDisabledSubscription, isSourceDisabled } from '@/lib/store';
+import { api } from '@/lib/client-api';
+import type { SearchResultItem, SourceSearchOutcome } from '@/lib/types';
+import { SearchHistoryDropdown, useSearchHistory } from '@/components/search-history';
+import { cn, formatDisableTtl, validateSourceUrl } from '@/lib/utils';
+import { useToast } from '@/components/toast';
+import { EmptyState } from '@/components/states';
+import { Icon } from '@/components/icon';
+import { SiteFooter } from '@/components/site-footer';
+
+/**
+ * 首页：搜索（URL ?s= 驱动，可后退/分享）+ 豆瓣推荐。
+ * 搜索状态由 React Query 管理，失败源在结果区顶部以非阻塞方式展示。
+ */
+/** 搜索结果分批渲染的批大小：一次挂载上千张卡片会明显掉帧 */
+const RESULT_PAGE_SIZE = 60;
+
+export default function HomePage() {
+  return (
+    <Suspense>
+      <HomeContent />
+    </Suspense>
+  );
+}
+
+function HomeContent() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const { toast } = useToast();
+  const urlQuery = searchParams.get('s') || '';
+  // 顶部分类菜单通过 URL 参数驱动推荐区（电影/剧集 + 标签）
+  const catParam = searchParams.get('cat');
+  const tagParam = searchParams.get('tag') || undefined;
+  const catType = catParam === 'movie' ? 'movie' : catParam === 'tv' ? 'tv' : undefined;
+  // 精确订阅所需字段（对齐 live 页的做法）：搜索流式期间逐源写健康度、
+  // 打开设置抽屉/历史面板等无关 store 变化，都不应触发首页整树重渲染
+  const customAPIs = useAppStore((s) => s.customAPIs);
+  const envSources = useAppStore((s) => s.envSources);
+  const selectedKeys = useAppStore((s) => s.selectedKeys);
+  const yellowFilter = useAppStore((s) => s.yellowFilter);
+  const sourceHealth = useAppStore((s) => s.sourceHealth);
+  const subscriptions = useAppStore((s) => s.subscriptions);
+  const doubanEnabled = useAppStore((s) => s.doubanEnabled);
+  const [input, setInput] = useState(urlQuery);
+  const [detailItem, setDetailItem] = useState<SearchResultItem | null>(null);
+  /** 流式搜索中已结算的源（data 就绪前用于增量渲染） */
+  const [streamedOutcomes, setStreamedOutcomes] = useState<SourceSearchOutcome[]>([]);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // URL 驱动搜索：?s 变化时回填输入框
+  useEffect(() => {
+    if (urlQuery) setInput(urlQuery);
+  }, [urlQuery]);
+
+  // 从顶部分类菜单跳进来时，等推荐区和影库渲染完再滚动过去。
+  // Next 导航完成后会把页面滚回顶部，所以延时一次不够，第二次做位置校正。
+  useEffect(() => {
+    if (!catType) return;
+    const scrollToRecommend = () => {
+      const el = document.getElementById('recommend');
+      if (!el) return;
+      const top = el.getBoundingClientRect().top + window.scrollY - 64;
+      window.scrollTo({ top, behavior: 'smooth' });
+    };
+    const first = setTimeout(scrollToRecommend, 350);
+    const second = setTimeout(() => {
+      const el = document.getElementById('recommend');
+      if (!el) return;
+      // 已经停在推荐区附近就不重复滚动，避免打断正在进行的平滑滚动
+      if (Math.abs(el.getBoundingClientRect().top - 64) > 60) {
+        scrollToRecommend();
+        // 兜底：平滑滚动在部分环境会被禁用，补一次瞬时滚动
+        setTimeout(() => {
+          const again = document.getElementById('recommend');
+          if (!again) return;
+          const target = again.getBoundingClientRect().top + window.scrollY - 64;
+          if (Math.abs(window.scrollY - target) > 60) window.scrollTo({ top: target });
+        }, 600);
+      }
+    }, 1000);
+    return () => {
+      clearTimeout(first);
+      clearTimeout(second);
+    };
+  }, [catType, tagParam]);
+
+  // 源名回显：失败/停用提示里显示友好名称而非裸 key
+  const sourceName = (key: string) =>
+    customAPIs.find((a) => a.key === key)?.name ??
+    envSources.find((a) => a.key === key)?.name ??
+    key;
+
+  const selectedSources = useMemo(() => {
+    // selectedKeys 可能含历史残留的重复 key：按 key 去重，避免同源重复搜索
+    const seen = new Set<string>();
+    return selectedKeys
+      .map((key) => resolveSource({ customAPIs, envSources }, key))
+      .filter((s): s is NonNullable<typeof s> => {
+        if (!s || !validateSourceUrl(s.url) || seen.has(s.key)) return false;
+        seen.add(s.key);
+        return true;
+      })
+      // 自动停用期内的源不参与搜索（到期自动恢复）
+      .filter((s) => !isSourceDisabled({ sourceHealth }, s.key))
+      // 所属订阅被整体停用的源同样跳过（无损：各源勾选状态保留，重新启用即恢复）
+      .filter((s) => !isInDisabledSubscription({ subscriptions }, s.key));
+  }, [customAPIs, envSources, selectedKeys, sourceHealth, subscriptions]);
+  const disabledSources = useMemo(
+    () => selectedKeys.filter((key) => isSourceDisabled({ sourceHealth }, key)),
+    [selectedKeys, sourceHealth]
+  );
+  // 来自已关闭订阅的源：勾选状态还在，但本次搜索用不到，必须明确告知
+  const offSubscriptionSources = useMemo(
+    () =>
+      selectedKeys.filter(
+        (key) => !isSourceDisabled({ sourceHealth }, key) && isInDisabledSubscription({ subscriptions }, key)
+      ),
+    [selectedKeys, sourceHealth, subscriptions]
+  );
+
+  const searchQuery = useQuery({
+    queryKey: ['search', urlQuery, selectedKeys, yellowFilter],
+    // 与 runSearch 的截断规则保持一致：顶栏搜索 / 手动构造长链接不会绕过上限
+    queryFn: ({ signal }) => {
+      setStreamedOutcomes([]);
+      return api.search(urlQuery.slice(0, 100), selectedSources, yellowFilter, {
+        signal,
+        // 逐源结算即更新：结果边搜边渲染，同时滚动健康度
+        onSource: (outcome) => {
+          setStreamedOutcomes((prev) => [...prev, outcome]);
+          for (const ev of useAppStore.getState().recordSourceHealth([outcome])) {
+            toast(
+              ev.permanent
+                ? `「${sourceName(ev.key)}」多次失败，已停止参与搜索，可在设置中恢复`
+                : `「${sourceName(ev.key)}」连续超时/失败，已停用 ${formatDisableTtl(ev.ttlMs ?? 0)}`,
+              'warning'
+            );
+          }
+        },
+      });
+    },
+    enabled: Boolean(urlQuery) && selectedSources.length > 0,
+    // 5 分钟内从播放页返回时直接使用缓存，不重新搜索（服务端另有 60s 结果缓存兜底）
+    staleTime: 300_000,
+  });
+
+  // 首屏大轮播的数据：优先放「自己影库里真能播的」，影库为空才退回豆瓣热门（纯搜索入口）。
+  // 复用 LocalLibraryRow 的 queryKey，与它命中同一份缓存，不会多发一次请求。
+  const libraryQuery = useQuery({
+    queryKey: ['local-list'],
+    queryFn: () => api.localList(),
+    staleTime: 30_000,
+  });
+  const localItems = libraryQuery.data?.list ?? [];
+  // 豆瓣兜底单独开一个 queryKey：推荐区那边按 50 条拉，这里只要 12 条，
+  // 共用一个 key 会让两边互相把缓存覆盖成对方需要的条数
+  const heroFallback = useQuery({
+    queryKey: ['douban', 'movie', '热门', 'hero'],
+    queryFn: ({ signal }) => api.douban('movie', '热门', 0, 12, signal),
+    // 影库拉到结果且确实为空时才去请求，避免定居用户白打一次豆瓣
+    enabled: doubanEnabled && libraryQuery.data !== undefined && localItems.length === 0,
+    staleTime: 300_000,
+  });
+
+  // 最近搜索改为搜索框下拉（聚焦展开、按输入过滤），不再常驻首屏
+  const searchHistory = useSearchHistory(input);
+
+  const runSearch = (q: string) => {
+    const query = q.trim().slice(0, 100);
+    if (!query) {
+      toast('请输入搜索内容', 'info');
+      inputRef.current?.focus();
+      return;
+    }
+    if (selectedSources.length === 0) {
+      toast('请先在设置中添加并勾选点播源', 'warning');
+      return;
+    }
+    router.push(`/?s=${encodeURIComponent(query)}`, { scroll: false });
+    searchHistory.record(query);
+  };
+
+  const pickHistory = (text: string) => {
+    setInput(text);
+    searchHistory.close();
+    runSearch(text);
+  };
+
+  const isSearching = Boolean(urlQuery) && searchQuery.isFetching && !searchQuery.data;
+  // 聚合数据未就绪时，用已结算源的结果增量渲染（健康源不再等坏源超时）
+  const streamedList = useMemo(
+    () => streamedOutcomes.flatMap((o) => o.list),
+    [streamedOutcomes]
+  );
+  const list = useMemo(
+    () => searchQuery.data?.list ?? (isSearching ? streamedList : []),
+    [searchQuery.data, isSearching, streamedList]
+  );
+  const failures =
+    searchQuery.data?.failures ??
+    streamedOutcomes
+      .filter((o) => !o.ok)
+      .map((o) => ({ sourceKey: o.sourceKey, error: o.error || '请求失败', timedOut: o.timedOut }));
+  // 跨源同名聚合：同名影片合并为一张卡片，展开后可选择具体来源
+  const groups = useMemo(() => aggregateResults(list), [list]);
+
+  // 分批渲染：新一次搜索（groups 变化）时重置回首批
+  const [visibleCount, setVisibleCount] = useState(RESULT_PAGE_SIZE);
+  const visibleGroups = useMemo(() => groups.slice(0, visibleCount), [groups, visibleCount]);
+  useEffect(() => setVisibleCount(RESULT_PAGE_SIZE), [groups]);
+
+  const heroItems = useMemo<HeroItem[]>(() => {
+    if (localItems.length > 0) {
+      return localItems.slice(0, 6).map((it) => {
+        // 本地条目的评分是服务端拼在 remarks 最前面的，拆出来单独展示
+        const { rating, rest } = splitRating(it.remarks);
+        return {
+          key: `local-${it.sourceKey}-${it.vodId}`,
+          title: it.name,
+          cover: it.pic,
+          // 背景视频：约定的同源地址，没剪片段时视频会报错并自动退回上面的封面图
+          heroClip: heroClipUrl(it.name),
+          year: it.year,
+          typeName: it.typeName,
+          area: it.area,
+          rating,
+          summary: rest,
+          ctaLabel: '立即播放',
+          onSelect: () => setDetailItem(it),
+        };
+      });
+    }
+    return (heroFallback.data?.items ?? []).slice(0, 6).map((d) => ({
+      key: `douban-${d.id}`,
+      title: d.title,
+      cover: d.cover,
+      rating: d.rating,
+      ctaLabel: '搜索播放',
+      onSelect: () => {
+        setInput(d.title);
+        runSearch(d.title);
+      },
+    }));
+    // runSearch 每次渲染都是新函数，这里刻意只依赖数据本身：重建 items 是廉价的，
+    // 而 HeroCarousel 按 key 串判断「数据是否真的换了」，不会因此被按回第一张
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localItems, heroFallback.data]);
+
+  return (
+    <div className="min-h-screen flex flex-col">
+      {/* 首页整页背景：由《海贼王1180集》抽帧生成，纱的浓淡随亮/暗主题（见 globals.css） */}
+      <div className="page-backdrop" aria-hidden />
+      <Header showSearch />
+
+      <main className="relative flex-1 max-w-6xl lg:max-w-7xl w-full mx-auto px-4 py-6">
+        {/* 桌面端：左侧 sticky 类型栏常驻，右侧是内容区；手机/平板左栏隐藏、用顶部胶囊条 */}
+        <div className="lg:flex lg:items-start lg:gap-4">
+          {!urlQuery && <SideCategoryNav />}
+          <div className="flex-1 min-w-0">
+        {/* 搜索区：电脑端搜索框已移到顶栏居中，这里只保留平板和手机 */}
+        <section className={cn('flex flex-col items-center lg:hidden', urlQuery ? 'mb-6' : 'mt-8 mb-6')}>
+          {!urlQuery && (
+            <header className="text-center mb-6">
+              <h1 className="text-4xl sm:text-5xl font-bold brand-gradient">LibreTV</h1>
+              <p className="mt-2 text-xs text-muted">多源聚合搜索 · 本地影库直连 · 无广告</p>
+            </header>
+          )}
+          {urlQuery && <h1 className="sr-only">LibreTV 视频搜索</h1>}
+          {/* 定位容器比胶囊宽一圈：浮层按它的宽度对齐，接缝处不会与胶囊边框错位 1px */}
+          <div ref={searchHistory.containerRef} className="relative w-full max-w-2xl">
+            <form
+              className="w-full"
+              onSubmit={(e) => {
+                e.preventDefault();
+                runSearch(input);
+              }}
+            >
+              {/* 输入框与搜索按钮合并为一个胶囊：内部无边框，焦点态由容器统一表达；
+                  下拉展开时改为「上圆下直」并隐去底边，与下方浮层拼成同一个面板 */}
+              <div
+                className={cn(
+                  // 12px 圆角矩形（非胶囊）：收起态与展开态共用同一组上圆角，
+                  // 展开时输入框这部分形状完全不发生变化，上下圆角也与下拉保持一致；
+                  // 右侧与上下不留内边距，由搜索按钮拉伸填满、与搜索框边缘贴合
+                  'flex items-stretch min-h-12 pl-4 border',
+                  'transition-[background-color,border-color,border-radius] duration-200',
+                  searchHistory.visible
+                    ? // 展开时：外框（含上圆角）沿用输入框的聚焦样式不变，只把底边改为内部分隔线，
+                      // 使输入区在展开状态下仍是边界清晰的独立输入框，而非与列表糊成一片
+                      'rounded-t-xl rounded-b-none border-accent border-b-line bg-surface-raised'
+                    : 'rounded-xl border-line bg-chip focus-within:border-accent focus-within:ring-1 focus-within:ring-accent/40'
+                )}
+              >
+                <input
+                  ref={inputRef}
+                  className="flex-1 min-w-0 pr-2 bg-transparent text-sm text-content placeholder:text-faint focus:outline-none"
+                  placeholder="输入影片名称..."
+                  value={input}
+                  maxLength={100}
+                  onChange={(e) => {
+                    setInput(e.target.value);
+                    searchHistory.resetActive();
+                  }}
+                  onFocus={searchHistory.onFocus}
+                  onKeyDown={(e) => searchHistory.onKeyDown(e, pickHistory)}
+                  role="combobox"
+                  aria-label="搜索影片"
+                  aria-expanded={searchHistory.visible}
+                  aria-controls="home-search-history"
+                  aria-autocomplete="list"
+                  aria-activedescendant={
+                    searchHistory.visible && searchHistory.activeIndex >= 0
+                      ? `home-search-history-${searchHistory.activeIndex}`
+                      : undefined
+                  }
+                />
+                {input && (
+                  <button
+                    type="button"
+                    className="shrink-0 self-center mr-1 p-1.5 rounded-full text-faint hover:text-content hover:bg-hover transition-colors"
+                    onClick={() => {
+                      setInput('');
+                      searchHistory.resetActive();
+                      inputRef.current?.focus();
+                    }}
+                    aria-label="清空"
+                  >
+                    <Icon name="close" className="w-4 h-4" />
+                  </button>
+                )}
+                {/* 主操作按钮：贴合搜索框右端——右侧圆角跟随容器、左侧直角，展开时右下角
+                    跟着容器一起改直角；按压改用亮度反馈（缩放会让贴合边缘露出缝隙） */}
+                <button
+                  type="submit"
+                  className={cn(
+                    'btn-primary shrink-0 px-4 font-medium transition-[background-color,filter] active:brightness-90',
+                    '!rounded-l-none',
+                    searchHistory.visible ? '!rounded-tr-xl !rounded-br-none' : '!rounded-r-xl'
+                  )}
+                >
+                  <Icon name="search" className="w-4 h-4" />
+                  搜索
+                </button>
+              </div>
+            </form>
+
+            {/* 最近搜索：与输入框无缝拼接；浮层不占文档流，出现/消失不会顶动下方内容 */}
+            {searchHistory.visible && (
+              <SearchHistoryDropdown
+                id="home-search-history"
+                matches={searchHistory.matches}
+                activeIndex={searchHistory.activeIndex}
+                onPick={pickHistory}
+                onRemove={searchHistory.remove}
+                onClearAll={searchHistory.clearAll}
+              />
+            )}
+          </div>
+        </section>
+
+        {/* 平板 / 手机：分类改为横向胶囊条，可左右滑动 */}
+        {!urlQuery && <CategoryChips />}
+
+        {/* 顶部大轮播：本地影库优先（点开即播），影库为空时退回豆瓣热门（点了就搜） */}
+        {!urlQuery && heroItems.length > 0 && (
+          <HeroCarousel items={heroItems} />
+        )}
+
+        {/* 搜索结果 */}
+        {urlQuery && (
+          <section aria-label="搜索结果" className="mb-10">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="section-heading text-muted">
+                “<span className="text-content">{urlQuery}</span>” 的搜索结果
+                {isSearching ? (
+                  <span className="text-faint">
+                    （已就绪 {streamedOutcomes.length}/{selectedSources.length} 个源…）
+                  </span>
+                ) : (
+                  searchQuery.data && (
+                    <span className="text-faint">
+                      （{groups.length} 部影片 · {list.length} 条结果{failures.length > 0 && `，${failures.length} 个源失败`}）
+                    </span>
+                  )
+                )}
+              </h2>
+            </div>
+
+            {failures.length > 0 && (
+              <div className="mb-3 text-xs bg-chip rounded-lg px-3 py-2 flex flex-wrap gap-x-3 gap-y-1">
+                <span className="text-faint">{isSearching ? '以下源暂时无响应：' : '部分点播源请求失败：'}</span>
+                {failures.map((f) => (
+                  <span key={f.sourceKey} className={f.timedOut ? 'text-warning' : 'text-faint'}>
+                    {f.timedOut ? '⏱' : '✗'} {sourceName(f.sourceKey)}
+                    {f.timedOut ? ' 超时' : ''}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {disabledSources.length > 0 && (
+              <div className="mb-3 text-xs text-faint bg-chip rounded-lg px-3 py-2">
+                {disabledSources.length} 个源因连续超时/失败已暂停参与搜索（临时停用的到期自动恢复，
+                长期停用的需在设置中手动恢复）：{disabledSources.map((key) => sourceName(key)).join('、')}
+              </div>
+            )}
+
+            {offSubscriptionSources.length > 0 && (
+              <div className="mb-3 text-xs text-faint bg-chip rounded-lg px-3 py-2">
+                {offSubscriptionSources.length} 个源所属的订阅已停用，未参与本次搜索（在设置 → 数据源订阅中可重新启用）：
+                {offSubscriptionSources.map((key) => sourceName(key)).join('、')}
+              </div>
+            )}
+
+            {selectedSources.length === 0 ? (
+              <NoSourceGuide hasSources={customAPIs.length > 0 || envSources.length > 0} />
+            ) : list.length > 0 ? (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-start">
+                  {visibleGroups.map((group, i) => (
+                    // 外层只负责入场错峰：动画的 fill 模式会锁住 transform，
+                    // 直接挂在卡片上会让它的悬停上浮失效
+                    <div
+                      key={group.key}
+                      className="anim-rise"
+                      style={{ animationDelay: `${Math.min(i, 12) * 35}ms` }}
+                    >
+                      <AggregatedCard group={group} sources={selectedSources} onOpen={(item) => setDetailItem(item)} />
+                    </div>
+                  ))}
+                </div>
+                {groups.length > visibleCount && (
+                  <div className="flex justify-center mt-4">
+                    <button
+                      className="btn-ghost btn-sm"
+                      onClick={() => setVisibleCount((v) => v + RESULT_PAGE_SIZE)}
+                    >
+                      加载更多（还有 {groups.length - visibleCount} 部）
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : isSearching ? (
+              <ResultsSkeleton />
+            ) : (
+              <EmptyState
+                icon="search"
+                title="没有找到匹配的结果"
+                description="请尝试其他关键词或更换点播源"
+                className="!py-16"
+              />
+            )}
+          </section>
+        )}
+
+        {/* 首页推荐（有搜索时隐藏）：先展示自己的本地影库，再展示远程榜单 */}
+        {!urlQuery && (
+          <>
+            <LocalLibraryRow onOpen={(item) => setDetailItem(item)} />
+            {/* 国漫精选：资源取自外部影库，点海报直接进详情选集播放 */}
+            <GuomanRow
+              onOpen={(item) => setDetailItem(item)}
+              onPick={(title) => {
+                setInput(title);
+                runSearch(title);
+              }}
+            />
+            {/* 豆瓣高分电影：固定片单（肖申克的救赎 / 星际穿越 / 复仇者联盟 ...），同样点海报直接选集播放 */}
+            <ClassicRow
+              onOpen={(item) => setDetailItem(item)}
+              onPick={(title) => {
+                setInput(title);
+                runSearch(title);
+              }}
+            />
+            {/* 猜你喜欢：按本地记录的观看分类推送同类内容，无记录时不显示 */}
+            <ForYouRow
+              onPick={(title) => {
+                setInput(title);
+                runSearch(title);
+              }}
+            />
+            <RecommendSection
+              initialType={catType}
+              initialTag={tagParam}
+              onPick={(title) => {
+                setInput(title);
+                runSearch(title);
+              }}
+            />
+          </>
+        )}
+          </div>
+        </div>
+      </main>
+
+      <SiteFooter />
+
+      <DetailModal item={detailItem} onClose={() => setDetailItem(null)} />
+    </div>
+  );
+}
+
+function ResultsSkeleton() {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      {Array.from({ length: 6 }).map((_, i) => (
+        // 结构对齐真实结果卡（左侧缩略图 + 右侧文字块），避免占位与真实卡片形状不符
+        <div key={i} className="card flex h-28 overflow-hidden">
+          <div className="w-[105px] sm:w-[120px] shrink-0 skeleton" />
+          <div className="flex-1 p-2.5 space-y-2">
+            <div className="h-4 w-3/4 rounded skeleton" />
+            <div className="h-3 w-1/2 rounded skeleton" />
+            <div className="h-3 w-full rounded skeleton" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** 无点播源 / 未勾选点播源时的引导（替代旧版首屏静默空白） */
+function NoSourceGuide({ hasSources = false }: { hasSources?: boolean }) {
+  return (
+    <div className="border border-dashed border-line rounded-xl p-10 text-center max-w-lg mx-auto">
+      <h3 className="text-content font-medium mb-2">{hasSources ? '尚未勾选点播源' : '先添加一个点播源'}</h3>
+      <p className="text-sm text-muted leading-relaxed">
+        {hasSources ? (
+          <>点击右上角「设置」，勾选要参与搜索的点播源后重新搜索。</>
+        ) : (
+          <>
+            LibreTV 不内置任何采集站。点击右上角「设置 → 添加 API」，填入一个
+            Apple CMS 采集站地址（如 <code className="text-accent text-xs">https://example.com/api.php/provide/vod</code>），
+            勾选后即可开始搜索。
+          </>
+        )}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * 本地影库条目的 remarks 里，评分是服务端拼在最前面的（「8.6 分 高清」这种）。
+ * 拆成「评分」与「剩余文字」，好让轮播把评分单独做成高亮徽章。
+ */
+function splitRating(remarks?: string): { rating?: string; rest?: string } {
+  const m = /^\s*([\d.]+)\s*分/.exec(remarks ?? '');
+  if (!m) return { rest: remarks?.trim() || undefined };
+  const rest = (remarks ?? '').slice(m[0].length).trim();
+  return { rating: m[1], rest: rest || undefined };
+}
+
+/**
+ * 首页 banner 背景视频的地址：与「自动剪辑出来的高潮片段」约定为同源 /hero/<片名>.mp4
+ * （片段由服务器上的 make_hero_clip.py 用 ffmpeg 生成，放在应用自己的 public/ 下，
+ * 不塞进影库目录——否则会被 local-cms 扫成一条新影片）。
+ * 片段不存在时 video 会触发 onError 并自动退回静图封面，所以这里不必先问服务端有没有。
+ */
+function heroClipUrl(name: string): string {
+  return `/hero/${encodeURIComponent(name)}.mp4`;
+}

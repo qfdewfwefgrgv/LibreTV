@@ -1,0 +1,9 @@
+{
+  "name": "云端直播订阅",
+  "liveSources": [
+    {
+      "name": "精选 1080p 频道（21）",
+      "url": "http://8.138.8.89/live/cn-verified.m3u"
+    }
+  ]
+}

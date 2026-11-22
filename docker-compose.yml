@@ -1,0 +1,73 @@
+services:
+  libretv:
+    build: .
+    image: ${LIBRETV_IMAGE:-ghcr.io/librespark/libretv:latest}
+    container_name: libretv
+    restart: unless-stopped
+    # host 网络：容器内 127.0.0.1 直达宿主机回环，
+    # 本地影库（127.0.0.1:8090）与同机服务必须依赖这一点（2026-10-24 修复误还原）
+    network_mode: host
+    # 百度资源 CDN 的 DNS 会返回 3 个 IP，其中 23.178.120.25 实测掉到 25KB/s 且会卡死数分钟；
+    # 这里把三个 CDN 主机名固定到实测正常的两个 IP，避免 Node 随机连到坏节点
+    extra_hosts:
+      - "b2.bdzybf22.com:23.144.60.113"
+      - "b3.bdzybf22.com:23.144.60.113"
+      - "tsb2.bdzybf22.com:23.144.28.41"
+    # 账号数据持久化：注册账号写入 /app/data/users.json，重建容器不丢
+    volumes:
+      - libretv-data:/app/data
+      - ./public/hero:/app/public/hero
+      - ./patch/game-client.js:/app/.next/static/chunks/app/game/page-11133448e246553b.js:ro
+      - ./patch/game.html:/app/.next/server/app/game.html:ro
+      - ./patch/game.rsc:/app/.next/server/app/game.rsc:ro
+      - ./patch/game-client-ref.js:/app/.next/server/app/game/page_client-reference-manifest.js:ro
+      - ./patch/naiwa-client-ref.js:/app/.next/server/app/game/naiwa/page_client-reference-manifest.js:ro
+      - ./patch/app-build-manifest.json:/app/.next/app-build-manifest.json:ro
+    environment:
+      # 必填：访问密码（在 .env 中设置，缺失时 compose 启动即报错提醒）
+      - PASSWORD=${PASSWORD:?请在 .env 中设置 PASSWORD}
+      # 账号数据库目录（与上面的卷对应）
+      - DATA_DIR=/app/data
+      # —— 以下为站点生产配置（与重建前运行中容器的环境一致，2026-10-24 重建） ——
+      # 管理员账号密码（用户名 admin，拥有全部权限）
+      - ADMIN_PASSWORD=19438
+      # —— 验证码发送通道（2026-10-25 新增） ——
+      # 邮箱：QQ 邮箱 SMTP，SMTP_PASS 填 16 位授权码（非登录密码）
+      - SMTP_HOST=${SMTP_HOST:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - ALIYUN_API_KEY=${ALIYUN_API_KEY:-}
+      - ALIYUN_CHAT_MODEL=${ALIYUN_CHAT_MODEL:-qwen-plus}
+      - GITHUB_RANK_TOKEN=${GITHUB_RANK_TOKEN:-}
+      - SMTP_PORT=${SMTP_PORT:-465}
+      - SMTP_SECURE=${SMTP_SECURE:-true}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_FROM=${SMTP_FROM:-}
+      # 短信：阿里云短信服务，签名与模板需在控制台审核通过
+      - ALIYUN_SMS_ACCESS_KEY_ID=${ALIYUN_SMS_ACCESS_KEY_ID:-}
+      - ALIYUN_SMS_ACCESS_KEY_SECRET=${ALIYUN_SMS_ACCESS_KEY_SECRET:-}
+      - ALIYUN_SMS_SIGN_NAME=${ALIYUN_SMS_SIGN_NAME:-}
+      - ALIYUN_SMS_TEMPLATE_CODE=${ALIYUN_SMS_TEMPLATE_CODE:-}
+      - ALIYUN_SMS_TEMPLATE_PARAM=${ALIYUN_SMS_TEMPLATE_PARAM:-code}
+      - ALIYUN_SMS_REGION=${ALIYUN_SMS_REGION:-cn-hangzhou}
+      # 代理上游请求超时（毫秒）与重试次数
+      - REQUEST_TIMEOUT=8000
+      - MAX_RETRIES=1
+      # 本地影库：放行内网点播源（自建影库走 127.0.0.1）
+      - SOURCE_ALLOW_PRIVATE=1
+      # 本站域名白名单：这些地址由 nginx 直出，不再套 /api/proxy 中转（否则每个分片多走一跳）
+      - PLATFORM_HOSTS=8.138.8.89,127.0.0.1,localhost,dianying.ltd,www.dianying.online,dianying.online
+      # 直播：放行回环地址（内置订阅源/同机服务）
+      - LIVE_ALLOW_PRIVATE=1
+      - PORT=8080
+      # 预置点播源：本地影库接口，用户端自动出现并默认勾选
+      - 'DEFAULT_SOURCES=[{"name":"百度资源","url":"https://api.apibdzy.com/api.php/provide/vod"},{"name":"极速资源","url":"https://jszyapi.com/api.php/provide/vod"},{"name":"红牛资源","url":"https://www.hongniuzy2.com/api.php/provide/vod"},{"name":"量子资源","url":"https://cj.lziapi.com/api.php/provide/vod/"},{"name":"光速资源","url":"https://api.guangsuapi.com/api.php/provide/vod"},{"name":"无尽资源","url":"https://api.wujinapi.me/api.php/provide/vod"}]'
+      # 首页「我的影库」区块数据源
+      # 预置直播源：服务器实测筛选清单 + IPTV-org 全量
+      - 'DEFAULT_LIVE_SOURCES=[{"name":"精选频道（18）","url":"https://www.dianying.online/live/cn-verified.m3u"},{"name":"本地影院轮播（9）","url":"https://www.dianying.online/live/local-cinema.m3u"},{"name":"个人直播（1）","url":"https://www.dianying.online/live/personal.m3u"}]'
+      # 预置数据源订阅（一次下发点播源 + 直播源）
+      - 'DEFAULT_SUBSCRIPTIONS=["https://www.dianying.online/sources.json"]'
+      - DEBUG=false
+
+volumes:
+  libretv-data:

@@ -1,0 +1,679 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * 语义化配色（RGB 三元组，供 Tailwind 以 <alpha-value> 注入透明度）：
+ * 深色主题沿用旧版 LibreTV 配色；浅色主题为对应的白底变体。
+ */
+:root {
+  /* 冷色调·蓝白：页面底色、面板、边框全部往蓝白方向偏，保持浅色系 */
+  --c-page: 244 248 255;           /* #f4f8ff 冷调蓝白页面底 */
+  --c-surface: 255 255 255;        /* #ffffff */
+  --c-surface-raised: 250 252 255; /* #fafcff */
+  --c-card: 255 255 255;
+  --c-chip: 237 244 255;           /* #edf4ff */
+  --c-hover: 227 239 255;          /* #e3efff */
+  --c-line: 213 227 246;           /* #d5e3f6 冷调浅蓝边框 */
+  --c-content: 22 36 56;           /* #162438 冷调深蓝黑正文 */
+  --c-muted: 80 102 132;           /* #506684 */
+  --c-faint: 107 128 156;          /* #6b809c（AA 4.5:1） */
+  --c-accent: 37 99 235;           /* blue-600 */
+  --c-accent-hover: 29 78 216;     /* blue-700 */
+  --c-on-accent: 255 255 255;      /* accent 实心底上的文字色 */
+  /* 辅助点缀色（品红/紫）：亮色下取深值，保证浅底上仍能看清 */
+  --c-accent2: 219 39 119;         /* pink-600 */
+  --c-accent3: 147 51 234;         /* purple-600 */
+  /* 首页整页背景图上那层纱的不透明度：亮色主题要更浓，深色文字才压得住 */
+  --bg-veil-a: 0.74;
+  --bg-veil-b: 0.90;
+  /* 语义状态色（亮色主题取偏深值，保证浅底上的对比度） */
+  --c-danger: 220 38 38;           /* red-600 */
+  --c-danger-hover: 185 28 28;     /* red-700 */
+  --c-success: 22 163 74;          /* green-600 */
+  --c-warning: 217 119 6;          /* amber-600 */
+  --c-info: 37 99 235;             /* blue-600 */
+  --c-rating: 245 158 11;          /* amber-500 */
+  /* 实心状态底色（配白字）：比「文字用」色更深一档，保证白字对比度 ≥ 4.5:1 */
+  --c-danger-solid: 185 28 28;     /* red-700 */
+  --c-success-solid: 21 128 61;    /* green-700 */
+  --c-warning-solid: 180 83 9;     /* amber-700 */
+  --c-info-solid: 29 78 216;       /* blue-700 */
+  color-scheme: light;
+}
+
+.dark {
+  /* 深蓝灰极简（Plex/Emby 风）：冷灰底 + 单一蓝色强调，不用霓虹 */
+  --c-page: 15 17 21;              /* #0f1115 冷灰页面底 */
+  --c-surface: 21 24 30;           /* #15181e 弹窗/抽屉底色 */
+  --c-surface-raised: 25 28 35;    /* #191c23 抬高一层的面板 */
+  --c-card: 18 21 26;              /* #12151a 卡片底色 */
+  --c-chip: 27 31 39;              /* #1b1f27 卡片/输入框底色 */
+  --c-hover: 34 39 49;             /* #222731 悬停态 */
+  --c-line: 41 47 58;              /* #292f3a 边框 */
+  --c-content: 232 236 242;        /* #e8ecf2 主文本（对 page 约 15:1） */
+  --c-muted: 148 156 170;          /* #949caa 次级文本（约 7.2:1） */
+  --c-faint: 114 122 136;          /* #727a88 三级文本（约 4.8:1，仍达 AA） */
+  --c-accent: 59 130 246;          /* #3b82f6 蓝色主色（弃用霓虹青） */
+  --c-accent-hover: 96 165 250;    /* #60a5fa */
+  --c-on-accent: 255 255 255;      /* 蓝底配白字 */
+  --c-accent2: 125 138 156;        /* #7d8a9c 中性冷灰（渐变端点，去品红） */
+  --c-accent3: 71 85 105;          /* #475569 石板灰（渐变中点，去紫） */
+  /* 深色主题下背景图可以露得多一些（文字本身是亮色，对比度够） */
+  --bg-veil-a: 0.62;
+  --bg-veil-b: 0.86;
+  /* 语义状态色（暗色主题取中等明度值，保证深蓝黑底上的对比度） */
+  --c-danger: 239 68 68;           /* red-500 */
+  --c-danger-hover: 248 113 113;   /* red-400 */
+  --c-success: 34 197 94;          /* green-500 */
+  --c-warning: 245 158 11;         /* amber-500 */
+  --c-info: 59 130 246;            /* blue-500 */
+  --c-rating: 251 191 36;          /* amber-400 */
+  /* 实心状态底色（配白字）：与亮色一致取深档，避免琥珀/绿色底白字对比度不足 */
+  --c-danger-solid: 185 28 28;     /* red-700 */
+  --c-success-solid: 21 128 61;    /* green-700 */
+  --c-warning-solid: 180 83 9;     /* amber-700 */
+  --c-info-solid: 29 78 216;       /* blue-700 */
+  color-scheme: dark;
+}
+
+/*
+ * 页面底色画在 <html>（根画布）上，<body> 保持透明。
+ * 原因：负 z-index 的极光层要露出来——按 CSS 绘制顺序，根元素的背景在最底层先画，
+ * 而 <body> 的背景属于普通块级背景、排在负 z-index 之后；body 一旦是不透明的，
+ * 极光层就会被整片盖死（此前首页那个 -z-10 的氛围渐变其实一直都没显出来）。
+ */
+html {
+  background-color: rgb(var(--c-page));
+}
+html,
+body {
+  @apply text-content antialiased;
+  /* 任何子元素意外超宽都不允许把整页撑出横向滚动条（小屏手机右滑露白边的根因兜底） */
+  overflow-x: clip;
+}
+body {
+  background: transparent;
+}
+.dark html {
+  background-image: linear-gradient(180deg, rgb(8 11 24), rgb(22 30 54));
+  background-attachment: fixed;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+}
+
+@layer components {
+  .card {
+    @apply bg-card border border-line rounded-lg overflow-hidden transition-all duration-200;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed;
+    /* 统一焦点环：键盘用户可见，与 .input 同一规格 */
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40;
+  }
+  .btn-primary {
+    @apply btn bg-accent text-on-accent hover:bg-accent-hover;
+  }
+  .btn-ghost {
+    @apply btn bg-chip text-muted hover:bg-hover hover:text-content border border-line;
+  }
+  .input {
+    @apply bg-chip border border-line rounded-md px-3 py-2 text-sm text-content placeholder:text-faint;
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:border-accent;
+  }
+  .tag {
+    @apply inline-flex items-center text-xs px-1.5 py-0.5 rounded-full;
+  }
+  /* 小尺寸按钮：定义在 .btn-* 之后，确保尺寸覆盖生效（与 .btn-primary / .btn-ghost 组合使用） */
+  .btn-sm {
+    @apply btn px-2.5 py-1 text-xs;
+  }
+  /* 胶囊控件（筛选、分类标签）：统一内边距与圆角 */
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] transition-colors;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    @apply bg-line rounded-full;
+  }
+}
+
+/* 行数截断 */
+.line-clamp-1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* 播放器集数激活态 */
+.episode-active {
+  background: rgb(var(--c-accent)) !important;
+  border-color: rgb(var(--c-accent)) !important;
+  /* 暗色下霓虹蓝底对白字对比度不足，统一用 on-accent（亮色白 / 暗色深） */
+  color: rgb(var(--c-on-accent)) !important;
+}
+
+/* 品牌渐变字：青 → 紫 → 品红，直接吃主题 token，亮暗两套主题都跟着走 */
+.brand-gradient {
+  background: linear-gradient(
+    100deg,
+    rgb(var(--c-accent)) 0%,
+    rgb(var(--c-accent3)) 45%,
+    rgb(var(--c-accent2)) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* LIVE 呼吸红点（直播页标识） */
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: #ef4444;
+  animation: live-breathe 2s ease-in-out infinite;
+}
+@keyframes live-breathe {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
+  50% { opacity: 0.55; box-shadow: 0 0 0 4px rgba(239, 68, 68, 0); }
+}
+
+/* ==========================================================================
+   霓虹动漫风视觉层（首页改版新增）
+   ========================================================================== */
+
+/* —— 全局极光背景：两层缓慢漂移的雾状光斑，给深色底加「呼吸感」 —— */
+.aurora-layer {
+  position: fixed;
+  inset: 0;
+  z-index: -10;
+  pointer-events: none;
+  overflow: hidden;
+  /* 动图感：两团柔光缓慢漂移 + 一道极淡的斜向光带循环扫过 */
+  background-image:
+    radial-gradient(56vw 56vw at 10% 6%, rgb(var(--c-accent) / 0.12), transparent 68%),
+    radial-gradient(50vw 50vw at 90% 2%, rgb(var(--c-accent2) / 0.1), transparent 68%),
+    linear-gradient(118deg, transparent 42%, rgb(var(--c-accent3) / 0.09) 50%, transparent 58%);
+  background-size: 100% 100%, 100% 100%, 260% 260%;
+  background-repeat: no-repeat;
+  animation:
+    aurora-drift 42s ease-in-out infinite alternate,
+    aurora-sweep 26s linear infinite;
+  will-change: transform, background-position;
+}
+@keyframes aurora-drift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to   { transform: translate3d(-2.2vw, 1.4vw, 0) scale(1.05); }
+}
+@keyframes aurora-sweep {
+  from { background-position: 0 0, 0 0, 120% 0%; }
+  to   { background-position: 0 0, 0 0, -60% 0%; }
+}
+.aurora-layer::before,
+.aurora-layer::after {
+  content: '';
+  position: absolute;
+  width: 55vw;
+  height: 55vw;
+  border-radius: 9999px;
+  filter: blur(90px);
+}
+.aurora-layer::before {
+  top: -18vw;
+  left: -12vw;
+  background: radial-gradient(circle, rgb(var(--c-accent) / 0.45), transparent 68%);
+  animation: aurora-a 26s ease-in-out infinite;
+}
+.aurora-layer::after {
+  top: -6vw;
+  right: -16vw;
+  background: radial-gradient(circle, rgb(var(--c-accent2) / 0.32), transparent 68%);
+  animation: aurora-b 34s ease-in-out infinite;
+}
+/* 亮色主题下压低亮度，避免白底上糊成一片粉 */
+:root:not(.dark) .aurora-layer::before { opacity: 0.35; }
+:root:not(.dark) .aurora-layer::after { opacity: 0.28; }
+/* 深色主题走极简风：雾光压到很低，只留一点点层次，不再有霓虹光斑 */
+.dark .aurora-layer::before { opacity: 0.30; }
+.dark .aurora-layer::after { opacity: 0.16; }
+
+@keyframes aurora-a {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50%      { transform: translate3d(6vw, 4vw, 0) scale(1.18); }
+}
+@keyframes aurora-b {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1.1); }
+  50%      { transform: translate3d(-5vw, 5vw, 0) scale(0.95); }
+}
+
+/* —— 首页整页背景图：两张图轮换 + 一层随主题变浓淡的纱 ——
+   图层顺序（从下到上）：元素自身的《海贼王》图 → ::after 的《哪吒2》图（靠 opacity
+   交叉淡入）→ ::before 的纱。纱必须够浓：标题文字是直接压在背景上的（卡片有自己的
+   底色不受影响），纱太薄就变成「为了看背景而看不清字」。 */
+.page-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -9;                    /* 垫在极光层之上、所有内容之下 */
+  pointer-events: none;
+  background-image: url('/bg/luffy.jpg');
+  background-size: cover;
+  background-position: center 28%;
+  background-repeat: no-repeat;
+  /* 动图感：整张背景极缓慢地推近 + 平移（Ken Burns），避免静止呆板 */
+  animation: backdrop-breathe 46s ease-in-out infinite alternate;
+  will-change: transform;
+}
+.page-backdrop::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url('/bg/nezha.jpg');
+  background-size: cover;
+  background-position: center 30%;
+  background-repeat: no-repeat;
+  opacity: 0;
+  animation: bg-swap 32s ease-in-out infinite;
+}
+.page-backdrop::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: linear-gradient(rgb(var(--c-page) / var(--bg-veil-a)), rgb(var(--c-page) / var(--bg-veil-b)));
+}
+/* 前半段显示第一张、后半段显示第二张，中间各 2 秒交叉淡入；切换时同时缓慢缩放，产生镜头推移感 */
+@keyframes bg-swap {
+  0%, 38%  { opacity: 0; transform: scale(1.04) translate3d(0, 0, 0); }
+  50%, 88% { opacity: 1; transform: scale(1.1) translate3d(-1.2%, -0.8%, 0); }
+  100%     { opacity: 0; transform: scale(1.04) translate3d(0, 0, 0); }
+}
+/* 整页背景的缓慢呼吸：缩放 + 轻微平移 */
+@keyframes backdrop-breathe {
+  from { transform: scale(1.02) translate3d(0, 0, 0); }
+  to   { transform: scale(1.08) translate3d(-1.2%, -1.6%, 0); }
+}
+/* 尊重系统「减少动态效果」设置 */
+@media (prefers-reduced-motion: reduce) {
+  .page-backdrop,
+  .page-backdrop::after,
+  .aurora-layer,
+  .aurora-layer::before,
+  .aurora-layer::after {
+    animation: none !important;
+  }
+}
+
+/* —— 海报卡：悬停上浮 + 霓虹光环 —— */
+.poster {
+  @apply relative overflow-hidden rounded-xl border border-line bg-card;
+  @apply transition-[transform,border-color,box-shadow] duration-300;
+  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60;
+}
+.poster:hover,
+.poster:focus-visible {
+  transform: translateY(-4px);
+  border-color: rgb(var(--c-accent) / 0.55);
+  box-shadow:
+    0 14px 34px -12px rgb(0 0 0 / 0.75),
+    0 0 0 1px rgb(var(--c-accent) / 0.22),
+    0 0 26px -4px rgb(var(--c-accent) / 0.35);
+}
+
+/* —— 玻璃质感面板（导航、浮层） —— */
+.glass {
+  background-color: rgb(var(--c-surface) / 0.72);
+  backdrop-filter: blur(14px) saturate(140%);
+  border-color: rgb(var(--c-line) / 0.9);
+}
+
+/* —— 选中态胶囊（筛选项/分类标签）：实心霓虹底 + 外发光 —— */
+.chip-active {
+  background: rgb(var(--c-accent));
+  color: rgb(var(--c-on-accent));
+  box-shadow: 0 0 16px -2px rgb(var(--c-accent) / 0.8);
+}
+
+/* —— 海报上浮现的播放圆钮 —— */
+.play-fab {
+  background: rgb(var(--c-accent) / 0.92);
+  color: rgb(var(--c-on-accent));
+  box-shadow: 0 0 22px -2px rgb(var(--c-accent) / 0.85);
+}
+
+/* —— 区块标题：左侧青→品红渐变竖条（颜色由调用方给，便于同一套头同时用于标题与说明行） —— */
+.section-heading {
+  @apply flex items-center gap-2 text-sm font-medium;
+}
+.section-heading::before {
+  content: '';
+  @apply block h-4 w-1 shrink-0 rounded-full;
+  background: linear-gradient(to bottom, rgb(var(--c-accent)), rgb(var(--c-accent2)));
+}
+
+/* —— 入场动画：卡片逐个升起（配合内联 animation-delay 做错峰） —— */
+.anim-rise {
+  animation: rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* —— 骨架屏：横向扫光（比 animate-pulse 更像「正在加载」） —— */
+.skeleton {
+  background-color: rgb(var(--c-chip));
+  background-image: linear-gradient(
+    100deg,
+    transparent 25%,
+    rgb(var(--c-line) / 0.7) 50%,
+    transparent 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+
+/* —— Hero 轮播 —— */
+.hero-shell {
+  @apply relative overflow-hidden rounded-2xl border border-line;
+  isolation: isolate;
+}
+/* 底部向上渐隐：保证标题压在图上仍读得清 */
+.hero-scrim {
+  background: linear-gradient(
+    to top,
+    rgb(var(--c-page)) 0%,
+    rgb(var(--c-page) / 0.82) 26%,
+    rgb(var(--c-page) / 0.3) 62%,
+    rgb(var(--c-page) / 0.05) 100%
+  );
+}
+/* 选中帧缓慢推近（Ken Burns），让静态海报也有动感 */
+.anim-kenburns {
+  animation: kenburns 9s ease-out both;
+}
+@keyframes kenburns {
+  from { transform: scale(1.02); }
+  to   { transform: scale(1.12) translateY(-1.5%); }
+}
+.hero-arrow {
+  @apply absolute top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full;
+  @apply text-white opacity-0 transition-opacity duration-200;
+  background: rgb(4 6 16 / 0.5);
+  backdrop-filter: blur(6px);
+}
+.hero-arrow:hover {
+  background: rgb(var(--c-accent) / 0.9);
+  color: rgb(var(--c-on-accent));
+}
+.hero-shell:hover .hero-arrow,
+.hero-arrow:focus-visible {
+  opacity: 1;
+}
+/* 触屏没有 hover：箭头常显，否则用户找不到下一张 */
+@media (hover: none) {
+  .hero-arrow { opacity: 1; }
+}
+/* 自动轮播进度条：每切一张重新播放（靠 key={index} 触发重挂载） */
+.hero-progress {
+  @apply absolute bottom-0 left-0 h-0.5 w-full;
+  transform-origin: left center;
+  background: linear-gradient(90deg, rgb(var(--c-accent)), rgb(var(--c-accent2)));
+  animation-name: bar;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
+@keyframes bar {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+/* —— 横向分类胶囊条：隐藏滚动条但保留滑动 —— */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* —— 无障碍：装饰性动效在「减少动态效果」下停掉，功能性反馈（spinner 等）保留 —— */
+@media (prefers-reduced-motion: reduce) {
+  .aurora-layer::before,
+  .aurora-layer::after,
+  .page-backdrop::after,
+  .anim-rise,
+  .anim-kenburns,
+  .skeleton,
+  .hero-progress {
+    animation: none !important;
+  }
+  /* 背景只在第一张上停住，不做轮换 */
+  .page-backdrop::after { opacity: 0; }
+  .anim-rise { opacity: 1; transform: none; }
+  .poster:hover,
+  .poster:focus-visible { transform: none; }
+}
+
+
+/* 移动端 / 平板全屏强制横屏：方向锁定不可用（iOS Safari 等）时的旋转兜底。
+   --fl-w / --fl-h 由 src/lib/force-landscape.ts 按视口实时写入。 */
+.force-landscape-rotate {
+  position: fixed !important;
+  inset: auto !important;
+  top: 50% !important;
+  left: 50% !important;
+  width: var(--fl-w, 100vh) !important;
+  height: var(--fl-h, 100vw) !important;
+  transform: translate(-50%, -50%) rotate(90deg) !important;
+  transform-origin: center center !important;
+  border-radius: 0 !important;
+  z-index: 2147483000 !important;
+}
+
+/* ==========================================================================
+   用户壁纸层（顶栏 Logo 右侧的壁纸下拉）
+   图层顺序：html 底色 → 极光层(-10) → 首页背景图(-9) → 壁纸层(-8) → 内容
+   壁纸种类与地址由 html 上的 data-wp / data-wp-kind / data-wp-anim 与
+   --wp-image / --wp-color 决定，切换即改属性，无需重渲染页面。
+   ========================================================================== */
+.wp-layer {
+  position: fixed;
+  inset: 0;
+  z-index: -8;
+  pointer-events: none;
+  display: none;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-color: transparent;
+}
+html[data-wp='on'] .wp-layer {
+  display: block;
+}
+/* 壁纸生效时停掉首页那两张轮换背景图，省一份动画开销 */
+html[data-wp='on'] .page-backdrop {
+  display: none;
+}
+
+/* 图片 / 自定义图片：缓慢漂移+缩放（Ken Burns），静态照片也有呼吸感 */
+html[data-wp-kind='image'] .wp-layer,
+html[data-wp-kind='custom'] .wp-layer {
+  background-image: var(--wp-image, none);
+  transform-origin: center;
+  will-change: transform;
+  animation: wp-drift 40s ease-in-out infinite;
+}
+
+/* 纯色：用同一底色派生明暗渐层，缓慢流动，纯色也不再是死板的色块 */
+html[data-wp-kind='color'] .wp-layer {
+  background-color: var(--wp-color, transparent);
+  background-image: linear-gradient(
+    115deg,
+    color-mix(in srgb, var(--wp-color, #000) 88%, #fff) 0%,
+    var(--wp-color, #000) 36%,
+    color-mix(in srgb, var(--wp-color, #000) 86%, #000) 70%,
+    color-mix(in srgb, var(--wp-color, #000) 92%, #fff) 100%
+  );
+  background-size: 300% 300%;
+  animation: wp-color-flow 28s ease-in-out infinite;
+}
+
+/* 动态壁纸 */
+html[data-wp-anim='aurora'] .wp-layer {
+  background-image: linear-gradient(135deg, #0b1f3a, #1c6b6b 45%, #7b3fa0);
+  background-size: 220% 220%;
+  animation: wp-aurora 22s ease-in-out infinite alternate;
+}
+html[data-wp-anim='stars'] .wp-layer {
+  background-image:
+    radial-gradient(1px 1px at 22% 18%, #fff 50%, transparent 51%),
+    radial-gradient(1px 1px at 68% 34%, #fff 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 42% 62%, #fff 50%, transparent 51%),
+    radial-gradient(1px 1px at 82% 76%, #fff 50%, transparent 51%),
+    linear-gradient(160deg, #0a0f24, #1b2a4a);
+  background-size: 180px 180px, 240px 240px, 300px 300px, 220px 220px, 100% 100%;
+  animation: wp-stars 60s linear infinite;
+}
+html[data-wp-anim='breath'] .wp-layer {
+  background-image: linear-gradient(135deg, #3b1d4a, #6b2c4a 50%, #8a5a2b);
+  background-size: 200% 200%;
+  animation: wp-breath 14s ease-in-out infinite;
+}
+@keyframes wp-aurora {
+  from { background-position: 0% 0%; }
+  to   { background-position: 100% 100%; }
+}
+@keyframes wp-stars {
+  from { background-position: 0 0, 0 0, 0 0, 0 0, 0 0; }
+  to   { background-position: 180px 300px, -240px 240px, 300px -300px, -220px -220px, 0 0; }
+}
+@keyframes wp-breath {
+  0%, 100% { background-position: 0% 50%; }
+  50%      { background-position: 100% 50%; }
+}
+@keyframes wp-drift {
+  0%, 100% { transform: scale(1.06) translate3d(-0.6%, -0.4%, 0); }
+  50%      { transform: scale(1.12) translate3d(0.6%, 0.5%, 0); }
+}
+@keyframes wp-color-flow {
+  0%, 100% { background-position: 0% 50%; }
+  50%      { background-position: 100% 50%; }
+}
+
+/* 壁纸菜单缩略图同步动起来，便于直观看出所有类型都是动态的 */
+.wp-thumb-drift {
+  animation: wp-thumb-drift 16s ease-in-out infinite;
+  transform-origin: center;
+}
+@keyframes wp-thumb-drift {
+  0%, 100% { transform: scale(1.02) translate3d(-1%, -1%, 0); }
+  50%      { transform: scale(1.12) translate3d(1%, 1%, 0); }
+}
+.wp-thumb-flow {
+  background-size: 220% 220% !important;
+  animation: wp-color-flow 9s ease-in-out infinite;
+}
+.wp-thumb-color {
+  background-image: linear-gradient(
+    115deg,
+    color-mix(in srgb, var(--wp-thumb-color, #000) 85%, #fff),
+    var(--wp-thumb-color, #000) 50%,
+    color-mix(in srgb, var(--wp-thumb-color, #000) 88%, #000)
+  ) !important;
+  background-size: 260% 260%;
+  animation: wp-color-flow 9s ease-in-out infinite;
+}
+
+/* 可读性遮罩：图片类需要更浓的纱；纯色本身就柔和，纱放薄一些才看得出颜色 */
+.wp-layer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgb(var(--c-page) / 0.7), rgb(var(--c-page) / 0.88));
+}
+.dark .wp-layer::after {
+  background: linear-gradient(180deg, rgb(8 11 24 / 0.62), rgb(8 11 24 / 0.84));
+}
+html[data-wp-kind='color'] .wp-layer::after {
+  background: linear-gradient(180deg, rgb(var(--c-page) / 0.55), rgb(var(--c-page) / 0.72));
+}
+.dark[data-wp-kind='color'] .wp-layer::after {
+  background: linear-gradient(180deg, rgb(0 0 0 / 0.38), rgb(0 0 0 / 0.58));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wp-layer {
+    animation: none !important;
+  }
+}
+
+/* 手机底部导航占位：内容不被 58px 的底栏盖住（含 iOS 安全区） */
+@media (max-width: 767px) {
+  body {
+    padding-bottom: calc(58px + env(safe-area-inset-bottom));
+  }
+}
+
+/* ——— 桌宠动画 ——— */
+.pet-root {
+  display: block;
+  transform-origin: 50% 90%;
+}
+.pet-idle {
+  animation: pet-idle 4.5s ease-in-out infinite;
+}
+@keyframes pet-idle {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50%      { transform: translateY(-3px) scale(1.015); }
+}
+.pet-bounce {
+  animation: pet-bounce 0.62s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes pet-bounce {
+  0%   { transform: translateY(0) scale(1); }
+  30%  { transform: translateY(-14px) scale(1.07) rotate(-6deg); }
+  60%  { transform: translateY(2px) scale(0.94) rotate(4deg); }
+  100% { transform: translateY(0) scale(1) rotate(0); }
+}
+/* 奶蛙笑疯：快速左右抖动 + 上跳 */
+.pet-laugh {
+  animation: pet-laugh 0.34s ease-in-out 5;
+}
+@keyframes pet-laugh {
+  0%   { transform: rotate(0) translateY(0) scale(1); }
+  20%  { transform: rotate(-11deg) translateY(-9px) scale(1.09); }
+  45%  { transform: rotate(11deg) translateY(-13px) scale(1.12); }
+  70%  { transform: rotate(-7deg) translateY(-5px) scale(1.04); }
+  100% { transform: rotate(0) translateY(0) scale(1); }
+}
+/* 召唤出的小奶蛙：弹入 + 持续蹦跳 */
+.pet-clone-in {
+  animation: pet-clone-in 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes pet-clone-in {
+  0%   { opacity: 0; transform: scale(0.2) translateY(24px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+.pet-clone-bounce {
+  animation: pet-clone-bounce 0.5s ease-in-out infinite;
+}
+@keyframes pet-clone-bounce {
+  0%, 100% { transform: translateY(0) rotate(-5deg); }
+  50%      { transform: translateY(-10px) rotate(5deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pet-idle, .pet-bounce, .pet-laugh, .pet-clone-in, .pet-clone-bounce {
+    animation: none !important;
+  }
+}
