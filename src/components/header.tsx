@@ -170,7 +170,7 @@ export function Header({ showSearch = false }: { showSearch?: boolean }) {
             <HeaderLink href="/live" active={pathname === '/live'}>
               直播
             </HeaderLink>
-            <HeaderLink href="/game" active={pathname === '/game'} className="hidden sm:inline-flex">
+            <HeaderLink href="/game" active={pathname === '/game'} className="hidden sm:inline-flex" reload>
               游戏
             </HeaderLink>
             <HeaderLink href="/comic" active={pathname === '/comic'} className="hidden sm:inline-flex">
@@ -210,7 +210,15 @@ export function Header({ showSearch = false }: { showSearch?: boolean }) {
                     <Link
                       key={item.href}
                       href={item.href}
-                      onClick={() => setMoreOpen(false)}
+                      onClick={(e) => {
+                        setMoreOpen(false);
+                        // 游戏页依赖动态加载的 chunk，站内跳转在产物缺失时会整页报错；
+                        // 这里强制整页导航，让服务端直出游戏列表，避免客户端路由加载失败。
+                        if (item.href === '/game') {
+                          e.preventDefault();
+                          window.location.href = '/game';
+                        }
+                      }}
                       className={cn(
                         'block px-2.5 py-2 rounded-md text-sm transition-colors',
                         pathname === item.href
@@ -259,21 +267,31 @@ function HeaderLink({
   active,
   children,
   className,
+  reload = false,
 }: {
   href: string;
   active: boolean;
   children: React.ReactNode;
   className?: string;
+  /** 强制整页导航：用于依赖较多动态 chunk 的页面，避免客户端路由加载失败 */
+  reload?: boolean;
 }) {
+  const classes = cn(
+    'px-2.5 py-1.5 rounded-md text-sm transition-colors',
+    active ? 'text-content bg-hover' : 'text-muted hover:text-content',
+    className
+  );
+
+  if (reload) {
+    return (
+      <a href={href} className={classes}>
+        {children}
+      </a>
+    );
+  }
+
   return (
-    <Link
-      href={href}
-      className={cn(
-        'px-2.5 py-1.5 rounded-md text-sm transition-colors',
-        active ? 'text-content bg-hover' : 'text-muted hover:text-content',
-        className
-      )}
-    >
+    <Link href={href} className={classes}>
       {children}
     </Link>
   );
