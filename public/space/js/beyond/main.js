@@ -15,6 +15,12 @@ window.__emStarted = true;
 
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
+let fpsEl = null;
+if (params.has('fps')) {
+  fpsEl = document.createElement('div');
+  fpsEl.style.cssText = 'position:fixed;right:12px;top:64px;z-index:9999;font:12px/1.4 ui-monospace,monospace;color:#9fe;background:rgba(0,0,0,.55);padding:4px 8px;border:1px solid rgba(120,220,255,.35);pointer-events:none';
+  document.body.appendChild(fpsEl);
+}
 const TOUCH = matchMedia('(pointer: coarse)').matches;
 const MOBILE = TOUCH || Math.min(innerWidth, innerHeight) < 700;
 const WP = !!window.__WALLPAPER;            // running as a desktop wallpaper (Wallpaper Engine): no page UI, controlled by js/wallpaper
@@ -22,7 +28,7 @@ const WP = !!window.__WALLPAPER;            // running as a desktop wallpaper (W
 // scale = render pixels per CSS pixel (capped by maxPx), msaa samples, shadow map size (0 = off) and refresh
 // interval, bloom mip levels, ray-march steps, and instance budgets.
 const TIERS = {
-  low: { scale: 0.75, maxPx: 1.2e6, msaa: 2, shadowMap: 0, shadowEvery: 0, bloomLevels: 5, fps: 30, engines: 1100, hero: 26, volSteps: 10, atmoSteps: 7, atmoLight: 3, earthSeg: [160, 100], climbers: 4, steer: 48, ringSeg: 720, sats: 500, ships: 90, dust: 600, shards: 30, cme: 2000, asteroids: 10000, kuiper: 12000, galaxy: 90000, localArm: 14000, hii: 450, dustLanes: 8000, mc: 3000, ism: 1000, nebSteps: 16, stars: 6000 },
+  low: { scale: 1.5, maxPx: 2.0e6, msaa: 0, shadowMap: 0, shadowEvery: 0, bloomLevels: 5, fps: 60, engines: 1400, hero: 26, volSteps: 12, atmoSteps: 8, atmoLight: 4, earthSeg: [192, 120], climbers: 5, steer: 56, ringSeg: 900, sats: 700, ships: 120, dust: 800, shards: 40, cme: 2600, asteroids: 14000, kuiper: 16000, galaxy: 120000, localArm: 18000, hii: 600, dustLanes: 10000, mc: 4000, ism: 1400, nebSteps: 17, stars: 8000 },
   medium: { scale: 1.0, maxPx: 2.1e6, msaa: 4, shadowMap: 1024, shadowEvery: 2, bloomLevels: 6, fps: 30, engines: 1800, hero: 26, volSteps: 14, atmoSteps: 9, atmoLight: 4, earthSeg: [200, 128], climbers: 5, steer: 60, ringSeg: 1080, sats: 1000, ships: 180, dust: 1100, shards: 50, cme: 3500, asteroids: 20000, kuiper: 24000, galaxy: 200000, localArm: 28000, hii: 900, dustLanes: 16000, mc: 5500, ism: 2000, nebSteps: 18, stars: 9000 },
   high: { scale: 1.25, maxPx: 3.3e6, msaa: 4, shadowMap: 2048, shadowEvery: 1, bloomLevels: 7, fps: 60, engines: 2600, hero: 26, volSteps: 18, atmoSteps: 11, atmoLight: 6, earthSeg: [256, 160], climbers: 6, steer: 72, ringSeg: 1440, sats: 1500, ships: 260, dust: 1600, shards: 70, cme: 5000, asteroids: 30000, kuiper: 34000, galaxy: 300000, localArm: 40000, hii: 1300, dustLanes: 24000, mc: 8000, ism: 3000, nebSteps: 22, stars: 12000 },
   ultra: { scale: 1.5, maxPx: 5.0e6, msaa: 4, shadowMap: 2048, shadowEvery: 1, bloomLevels: 7, fps: 60, engines: 3000, hero: 26, volSteps: 22, atmoSteps: 12, atmoLight: 6, earthSeg: [320, 200], climbers: 6, steer: 72, ringSeg: 1440, sats: 1800, ships: 300, dust: 1800, shards: 80, cme: 6000, asteroids: 36000, kuiper: 40000, galaxy: 360000, localArm: 48000, hii: 1500, dustLanes: 28000, mc: 9000, ism: 3500, nebSteps: 24, stars: 12000 },
@@ -787,14 +793,14 @@ function adapt(dt) {
   // smoothness first: frames arriving 25 % late for two windows → step down; the order of sacrifice is
   // resolution (down to 60 %), then the shadow map's refresh rate. Recovery is slow, and when frames are capped
   // (arriving on time says nothing about headroom) it never retries a scale that failed in the last two minutes.
-  perf.slow = avg > budget * 1.25 ? perf.slow + 1 : 0;
-  perf.fast = (capped ? avg < budget * 1.06 : avg < 0.0125) ? (perf.fast || 0) + 1 : 0;
+  perf.slow = avg > budget * 1.12 ? perf.slow + 1 : 0;
+  perf.fast = avg < budget * (capped ? 1.06 : 1.05) ? (perf.fast || 0) + 1 : 0;
   let k = 0; const now = performance.now();
   if (perf.slow >= 2) {
     perf.slow = 0;
     if (perf.k > 0.6) { k = Math.max(0.6, perf.k * 0.85); perf.failK = perf.k; perf.failAt = now; }
     else if (Q.shadowMap && (S.shadowEvery || Q.shadowEvery) < 4) S.shadowEvery = 4;
-  } else if (perf.fast >= (capped ? 12 : 4) && perf.k < 1) {
+  } else if (perf.fast >= (capped ? 12 : 8) && perf.k < 1) {
     const nk = Math.min(1, perf.k * 1.08);
     if (!capped || !(perf.failK && nk >= perf.failK - 1e-6 && now - perf.failAt < 120000)) { perf.fast = 0; k = nk; }
   }
@@ -820,9 +826,17 @@ addEventListener('resize', resize);
 
 /* ------------------------------------------------------------------ boot */
 let last = performance.now();
+let fpsAcc = 0, fpsN = 0;
 function loop(now) {
   if (app.hooks.gate && !app.hooks.gate(now)) { requestAnimationFrame(loop); return; }   // wallpaper: paused, or over the fps limit
   const dt = Math.min((now - last) / 1000, 0.05); last = now;
+  if (fpsEl) {
+    fpsAcc += dt; fpsN++;
+    if (fpsAcc >= 0.5) {
+      fpsEl.textContent = Math.round(fpsN / fpsAcc) + ' FPS · DPR ' + renderer.getPixelRatio().toFixed(2);
+      fpsAcc = 0; fpsN = 0;
+    }
+  }
   pipe.collect();                 // exposure readbacks first, while the GPU queue holds only last frame's work
   frame(dt, now);
   pipe.render(dt);
