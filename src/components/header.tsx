@@ -164,6 +164,9 @@ export function Header({ showSearch = false }: { showSearch?: boolean }) {
           <div className="flex-1 sm:hidden" />
 
           <nav className="flex items-center gap-1 ml-auto">
+            <HeaderLink href="/space" active={pathname === '/space'} className="hidden sm:inline-flex">
+              观测宇宙
+            </HeaderLink>
             <HeaderLink href="/live" active={pathname === '/live'}>
               直播
             </HeaderLink>
@@ -195,6 +198,7 @@ export function Header({ showSearch = false }: { showSearch?: boolean }) {
               {moreOpen && (
                 <div className="absolute right-0 top-full mt-1 w-36 rounded-lg border border-line bg-surface shadow-xl p-1 z-50 animate-fade-in">
                   {[
+                    { href: '/space', label: '观测宇宙' },
                     { href: '/game', label: '游戏中心' },
                     { href: '/comic', label: '漫画' },
                     { href: '/github', label: 'GitHub 榜单' },
