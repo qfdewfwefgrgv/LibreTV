@@ -288,18 +288,67 @@ function parryChance(defQi: number, atkSchool: SchoolKey): number {
   return clamp(Math.round(10 + defQi * 0.12 + SCHOOLS[atkSchool].parryVs), 2, 60);
 }
 
-/** 装备：只有装进槽位才生效，提供战力与护甲减伤 */
-type GearDef = { slot: GearSlot; power: number; desc: string };
+/**
+ * 装备：只有装进槽位才生效，提供战力与护甲减伤。
+ * 另有三条锻造词条（原作的「暴击 / 吸血 / 速度」）：
+ * - crit：额外会心率（百分点）
+ * - lifesteal：命中后按伤害比例吸血（百分点）
+ * - speed：出手速度
+ */
+type GearDef = { slot: GearSlot; power: number; crit?: number; lifesteal?: number; speed?: number; desc: string };
 
 const GEAR: Record<string, GearDef> = {
   柴刀: { slot: 'weapon', power: 2, desc: '农家柴刀，刃口卷了，聊胜于无。' },
-  青铜剑: { slot: 'weapon', power: 6, desc: '镖局制式青铜剑，沉手耐用。' },
-  柳叶刀: { slot: 'weapon', power: 9, desc: '刀身如柳叶，轻快锋利。' },
-  镇远剑: { slot: 'weapon', power: 20, desc: '沈家祖传，剑脊刻「镇远」二字。' },
-  软甲: { slot: 'armor', power: 10, desc: '贴身软甲，可卸去两成刀伤。' },
-  青玉哨: { slot: 'accessory', power: 2, desc: '青玉小哨，吹响时能定神。' },
-  盟主令: { slot: 'accessory', power: 6, desc: '号令群雄的信物，佩之则气势自生。' },
+  青铜剑: { slot: 'weapon', power: 6, crit: 2, speed: 1, desc: '镖局制式青铜剑，沉手耐用。' },
+  柳叶刀: { slot: 'weapon', power: 9, crit: 3, lifesteal: 6, speed: 2, desc: '刀身如柳叶，轻快锋利；刃薄能饮血。' },
+  镇远剑: { slot: 'weapon', power: 20, crit: 5, lifesteal: 12, speed: 1, desc: '沈家祖传，剑脊刻「镇远」二字，剑气回身。' },
+  软甲: { slot: 'armor', power: 10, speed: -2, desc: '贴身软甲，可卸去两成刀伤，只是略碍身法。' },
+  青玉哨: { slot: 'accessory', power: 2, crit: 3, speed: 4, desc: '青玉小哨，吹响时能定神提气。' },
+  盟主令: { slot: 'accessory', power: 6, crit: 5, speed: 6, desc: '号令群雄的信物，佩之则气势自生。' },
 };
+
+/** 词条文字：暴击 / 吸血 / 速度 */
+function gearAffix(gear: GearDef): string {
+  const parts: string[] = [];
+  if (gear.crit) parts.push(`暴击 +${gear.crit}%`);
+  if (gear.lifesteal) parts.push(`吸血 ${gear.lifesteal}%`);
+  if (gear.speed) parts.push(`速度 ${gear.speed > 0 ? '+' : ''}${gear.speed}`);
+  return parts.join(' · ');
+}
+
+/** 已装备物品的词条合计 */
+function gearStats(hero: Hero): { power: number; crit: number; lifesteal: number; speed: number } {  const total = { power: 0, crit: 0, lifesteal: 0, speed: 0 };
+  for (const { slot } of SLOT_LABELS) {
+    const name = hero.equipped[slot];
+    const gear = name ? GEAR[name] : null;
+    if (!gear) continue;
+    total.power += gear.power;
+    total.crit += gear.crit ?? 0;
+    total.lifesteal += gear.lifesteal ?? 0;
+    total.speed += gear.speed ?? 0;
+  }
+  return total;
+}
+
+/** 玩家出手速度：悟性 + 境界 + 装备 */
+function heroSpeed(hero: Hero): number {
+  return Math.round(10 + hero.wit * 0.16 + hero.level * 0.4 + gearStats(hero).speed);
+}
+
+/** 敌人出手速度：悟性与内力共同决定（敌人无装备） */
+function enemySpeed(def: EnemyDef): number {
+  return Math.round(10 + def.wit * 0.16 + def.qi * 0.06);
+}
+
+/**
+ * 先手判定：速度差超过 10，快者必先手；
+ * 相差 10 以内则随机，但更快的一方几率略高（原作的「速度相近看脸」）。
+ */
+function rollFirst(playerSpeed: number, foeSpeed: number): boolean {
+  const diff = playerSpeed - foeSpeed;
+  if (Math.abs(diff) > 10) return diff > 0;
+  return Math.random() < clamp(0.5 + diff / 40, 0.25, 0.75);
+}
 
 const SLOT_LABELS: { slot: GearSlot; label: string }[] = [
   { slot: 'weapon', label: '兵器' },
@@ -320,10 +369,10 @@ const STACKABLE = new Set(['金创药', '还魂草']);
 const SHOP: { name: string; price: number; note: string }[] = [
   { name: '金创药', price: 15, note: '回复 30 气血 · 可叠放' },
   { name: '还魂草', price: 45, note: '回复 55 气血 · 可叠放' },
-  { name: '软甲', price: 120, note: '护甲 · 接战减伤两成' },
-  { name: '青玉哨', price: 60, note: '饰品 · 战力 +2' },
-  { name: '柳叶刀', price: 80, note: '兵器 · 战力 +9' },
-  { name: '镇远剑', price: 260, note: '兵器 · 战力 +20' },
+  { name: '软甲', price: 120, note: '护甲 · 减伤两成 · 速度 -2' },
+  { name: '青玉哨', price: 60, note: '饰品 · 战力 +2 · 暴击 +3% · 速度 +4' },
+  { name: '柳叶刀', price: 80, note: '兵器 · 战力 +9 · 暴击 +3% · 吸血 6%' },
+  { name: '镇远剑', price: 260, note: '兵器 · 战力 +20 · 暴击 +5% · 吸血 12%' },
 ];
 
 /** 本地存档：只存主线状态，战斗与奇遇的临时局面不入档 */
@@ -336,6 +385,8 @@ type SaveData = {
   hero: Hero;
   nodeId: string;
   cleared: string[];
+  /** 上次存档时间戳：用于结算离线挂机收益 */
+  lastIdle?: number;
 };
 
 // ──────────────────────────── 剧情数据 ────────────────────────────
@@ -930,6 +981,16 @@ function expNeed(level: number): number {
   return 60 + (level - 1) * 45;
 }
 
+/**
+ * 离线挂机：按真实经过时间折算经验与银两，最多累计 12 小时。
+ * 速率刻意压低——挂一夜约等于手动二十来分钟的收益（原作设定）。
+ */
+const IDLE_CAP_MIN = 720;
+function idleGain(minutes: number): { exp: number; silver: number } {
+  const m = clamp(minutes, 0, IDLE_CAP_MIN);
+  return { exp: Math.floor(m * 0.15), silver: Math.floor(m * 0.22) };
+}
+
 /** 当前战力倍率：等级 + 装备 + 同流派秘籍 + 内功 */
 function heroPower(hero: Hero): number {
   const manual = MANUALS.find((m) => m.id === hero.manualId);
@@ -1015,6 +1076,7 @@ function strike(
   powerMul: number,
   defWit: number,
   defQi: number,
+  critBonus = 0,
 ): StrikeResult {
   const s = SCHOOLS[atkSchool];
   const roll = Math.random() * 100;
@@ -1023,7 +1085,7 @@ function strike(
   if (roll < dodgeChance(defWit, atkSchool) + parryChance(defQi, atkSchool)) {
     return { dmg: Math.max(1, Math.round(base * 0.35)), kind: 'parry' };
   }
-  const crit = Math.random() * 100 < critChance(atkWit);
+  const crit = Math.random() * 100 < clamp(critChance(atkWit) + critBonus, 8, 60);
   return { dmg: Math.max(1, Math.round(base * (crit ? 1.6 : 1))), kind: 'hit', crit };
 }
 
@@ -1047,7 +1109,18 @@ type BattleState = {
   over: null | 'win' | 'lose';
   enemyBleed: Bleed | null;
   playerBleed: Bleed | null;
+  /** 眩晕剩余出手次数：大于 0 时该方本回合只能挨打 */
+  playerStun: number;
+  enemyStun: number;
   lines: LogEntry[];
+};
+
+/** 战斗飘字/命中特效：side 表示特效落在哪一方 */
+type FxEvent = {
+  id: number;
+  side: 'player' | 'enemy';
+  text: string;
+  tone: 'dmg' | 'crit' | 'heal' | 'dodge' | 'parry';
 };
 
 /** 已装备物品提供的战力（未装备的行囊物品不加成） */
@@ -1159,11 +1232,28 @@ export function JianghuGame() {
   const [panel, setPanel] = useState<null | 'martial' | 'town' | 'bag'>(null);
   const [cleared, setCleared] = useState<string[]>([]);
   const [saveData, setSaveData] = useState<SaveData | null>(null);
+  /** 读档时算出的离线挂机收益，供开局界面展示 */
+  const [idlePreview, setIdlePreview] = useState<{ minutes: number; exp: number; silver: number } | null>(null);
   const logSeq = useRef(0);
   const travelCount = useRef(0);
   const battleSeq = useRef(0);
+  const fxSeq = useRef(0);
+  const prevChapterRef = useRef(0);
   const logRef = useRef<HTMLDivElement>(null);
   const battleLogRef = useRef<HTMLDivElement>(null);
+  const [battleFx, setBattleFx] = useState<FxEvent[]>([]);
+  const [chapterIntro, setChapterIntro] = useState<{ chapter: Chapter; key: number } | null>(null);
+
+  /** 战斗飘字：加入后 0.78s 自动清除 */
+  const addFx = (events: Omit<FxEvent, 'id'>[]) => {
+    if (events.length === 0) return;
+    const withId = events.map((e) => ({ ...e, id: (fxSeq.current += 1) }));
+    setBattleFx((prev) => [...prev, ...withId]);
+    const ids = new Set(withId.map((e) => e.id));
+    setTimeout(() => {
+      setBattleFx((prev) => prev.filter((e) => !ids.has(e.id)));
+    }, 780);
+  };
 
   useEffect(() => {
     const el = logRef.current;
@@ -1175,13 +1265,32 @@ export function JianghuGame() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [battle?.lines]);
 
+  // 章节切换时播放电影感过场卡
+  useEffect(() => {
+    if (phase !== 'play' && phase !== 'end') return;
+    const current = NODES[nodeId];
+    if (!current || current.chapter === prevChapterRef.current) return;
+    prevChapterRef.current = current.chapter;
+    setChapterIntro({ chapter: current.chapter, key: Date.now() });
+    const timer = setTimeout(() => setChapterIntro(null), 1900);
+    return () => clearTimeout(timer);
+  }, [nodeId, phase]);
+
   // 进入页面时读档，供开局界面显示「继续上次」
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(SAVE_KEY);
       if (!raw) return;
       const data = JSON.parse(raw) as SaveData;
-      if (data && data.v === 1 && data.hero && NODES[data.nodeId]) setSaveData(data);
+      if (data && data.v === 1 && data.hero && NODES[data.nodeId]) {
+        setSaveData(data);
+        // 离线挂机：按存档时间到现在折算，读档时发放
+        const minutes = data.lastIdle ? (Date.now() - data.lastIdle) / 60000 : 0;
+        const gain = idleGain(minutes);
+        if (minutes >= 1 && (gain.exp > 0 || gain.silver > 0)) {
+          setIdlePreview({ minutes: Math.floor(minutes), ...gain });
+        }
+      }
     } catch {
       // 存档损坏或不可读时当作没有存档
     }
@@ -1198,6 +1307,7 @@ export function JianghuGame() {
       hero,
       nodeId,
       cleared,
+      lastIdle: Date.now(),
     };
     try {
       window.localStorage.setItem(SAVE_KEY, JSON.stringify(data));
@@ -1280,10 +1390,16 @@ export function JianghuGame() {
         accessory: saved.equipped?.accessory ?? null,
       },
     };
+    // 离线挂机结算：先补经验与银两，再进入江湖
+    const gain = idlePreview;
+    let resumed = restored;
+    if (gain && (gain.exp > 0 || gain.silver > 0)) {
+      resumed = grantExp({ ...restored, silver: restored.silver + gain.silver }, gain.exp);
+    }
     setPlayerName(saveData.playerName);
     setAvatarKey(saveData.avatarKey);
     setOriginKey(saveData.originKey || null);
-    setHero(restored);
+    setHero(resumed);
     setNodeId(saveData.nodeId);
     setCleared(saveData.cleared ?? []);
     setPhase('play');
@@ -1294,6 +1410,15 @@ export function JianghuGame() {
     travelCount.current = 0;
     logSeq.current = 1;
     setLogs([{ id: 1, text: `续接江湖录 · ${NODES[saveData.nodeId].title}`, tone: 'info' }]);
+    if (gain && (gain.exp > 0 || gain.silver > 0)) {
+      pushLog(
+        `【挂机】离开的 ${gain.minutes} 分钟里你未曾停歇：得经验 ${gain.exp}、银两 ${gain.silver}${
+          resumed.level > restored.level ? `，境界提升至 ${resumed.level} 级` : ''
+        }`,
+        'event',
+      );
+    }
+    setIdlePreview(null);
     setSaveData(null);
   };
 
@@ -1312,6 +1437,9 @@ export function JianghuGame() {
     setLogs([]);
     travelCount.current = 0;
     logSeq.current = 0;
+    prevChapterRef.current = 0;
+    setBattleFx([]);
+    setChapterIntro(null);
   };
 
   // ——— 剧情推进 ———
@@ -1486,6 +1614,8 @@ export function JianghuGame() {
       over: null,
       enemyBleed: null,
       playerBleed: null,
+      playerStun: 0,
+      enemyStun: 0,
       lines: [{ id: 0, text: `${enemyDef.name}拦住去路：${enemyDef.intro}`, tone: 'info' }],
     });
   };
@@ -1498,7 +1628,10 @@ export function JianghuGame() {
     });
   };
 
-  /** 玩家出手一回合（含敌方反击），action: 'attack' | 'heal'（heal 需指定药品） */
+  /**
+   * 一回合：按速度判定先后手（相差 10 内随机、快者略占优），
+   * 眩晕方跳过出手；拳法命中可震晕对手；装备词条接入会心/吸血/速度。
+   */
   const actRound = (action: 'attack' | 'heal', medName?: string) => {
     if (!hero || !battle || battle.over) return;
     const { enemyDef } = battle;
@@ -1506,76 +1639,149 @@ export function JianghuGame() {
     let enemyHp = battle.enemyHp;
     let enemyBleed = battle.enemyBleed;
     let playerBleed = battle.playerBleed;
+    let playerStun = battle.playerStun;
+    let enemyStun = battle.enemyStun;
     let nextHero = hero;
+    let done = false;
 
-    if (action === 'attack') {
-      // 玩家出手：等级 + 装备 + 秘籍 + 内功 加成
-      const power = heroPower(hero);
-      const result = strike(hero.school, hero.qi, hero.wit, power, enemyDef.wit, enemyDef.qi);
-      const line = strikeText('player', enemyDef.name, hero.school, result);
-      pushBattleLine(`第${battle.round}回合：${line.text}`, line.tone);
-      enemyHp = Math.max(0, enemyHp - result.dmg);
-      if (enemyHp <= 0) {
-        pushBattleLine(`【胜】${enemyDef.name}倒下了。`, 'win');
-        setBattle((prev) => (prev ? { ...prev, enemyHp: 0, playerHp, over: 'win' } : prev));
+    const fxFrom = (side: 'player' | 'enemy', r: StrikeResult): Omit<FxEvent, 'id'> =>
+      r.kind === 'dodge'
+        ? { side, text: '闪避', tone: 'dodge' }
+        : r.kind === 'parry'
+          ? { side, text: `-${r.dmg}`, tone: 'parry' }
+          : { side, text: `-${r.dmg}`, tone: r.crit ? 'crit' : 'dmg' };
+
+    const finish = (over: 'win' | 'lose') => {
+      done = true;
+      setBattle((prev) => (prev ? { ...prev, enemyHp, playerHp, over } : prev));
+    };
+
+    /** 玩家出手（被震晕时只能挨打） */
+    const playerTurn = () => {
+      if (playerStun > 0) {
+        playerStun -= 1;
+        pushBattleLine(`你气血翻涌，被震得动弹不得（眩晕剩 ${playerStun} 回合）。`, 'lose');
         return;
       }
-      // 刀法命中割开皮肉：对方开始流血
-      const fresh = bleedFrom(hero.school, result);
-      if (fresh) {
-        enemyBleed = fresh;
-        pushBattleLine(`${enemyDef.name}皮肉翻卷，血流不止（剩 ${fresh.rounds} 回合，每回合 ${fresh.dmg} 点）。`, 'win');
+      if (action === 'attack') {
+        // 玩家出手：等级 + 装备 + 秘籍 + 内功 加成；装备会心词条另计
+        const gear = gearStats(hero);
+        const power = heroPower(hero);
+        const result = strike(hero.school, hero.qi, hero.wit, power, enemyDef.wit, enemyDef.qi, gear.crit);
+        const line = strikeText('player', enemyDef.name, hero.school, result);
+        pushBattleLine(line.text, line.tone);
+        addFx([fxFrom('enemy', result)]);
+        enemyHp = Math.max(0, enemyHp - result.dmg);
+        if (enemyHp <= 0) {
+          pushBattleLine(`【胜】${enemyDef.name}倒下了。`, 'win');
+          finish('win');
+          return;
+        }
+        // 吸血词条：按造成伤害的比例回血
+        if (result.dmg > 0 && gear.lifesteal > 0) {
+          const steal = Math.max(1, Math.round((result.dmg * gear.lifesteal) / 100));
+          const healed = Math.min(hero.maxHp, playerHp + steal) - playerHp;
+          if (healed > 0) {
+            playerHp += healed;
+            addFx([{ side: 'player', text: `+${healed}`, tone: 'heal' }]);
+            pushBattleLine(`兵刃饮血，你回复 ${healed} 点气血。`, 'win');
+          }
+        }
+        // 拳法沉实，命中可震晕对手；会心时震得更久
+        if (hero.school === 'quan' && result.kind === 'hit' && Math.random() * 100 < (result.crit ? 35 : 18)) {
+          enemyStun = Math.max(enemyStun, result.crit ? 2 : 1);
+          pushBattleLine(`${enemyDef.name}被一拳震得气血翻涌，眩晕 ${enemyStun} 回合！`, 'win');
+        }
+        // 刀法命中割开皮肉：对方开始流血
+        const fresh = bleedFrom(hero.school, result);
+        if (fresh) {
+          enemyBleed = fresh;
+          pushBattleLine(`${enemyDef.name}皮肉翻卷，血流不止（剩 ${fresh.rounds} 回合，每回合 ${fresh.dmg} 点）。`, 'win');
+        }
+      } else {
+        // 服药：按指定药品消耗一瓶，回复气血，让出这一回合
+        const med = medName && hero.items.includes(medName) ? medName : null;
+        if (!med) return;
+        const amount = MEDS[med]?.heal ?? 0;
+        nextHero = applyEffects(hero, { removeItems: [med] });
+        playerHp = Math.min(hero.maxHp, playerHp + amount);
+        setHero(nextHero);
+        addFx([{ side: 'player', text: `+${amount}`, tone: 'heal' }]);
+        pushBattleLine(`你服下${med}，气血回复 ${amount} 点（余 ${itemCount(nextHero, med)} 瓶）。`, 'win');
       }
+    };
+
+    /** 敌方出手（被震晕时跳过一次） */
+    const enemyTurn = () => {
+      if (enemyStun > 0) {
+        enemyStun -= 1;
+        pushBattleLine(`${enemyDef.name}头晕目眩，这一招落在空处（眩晕剩 ${enemyStun} 回合）。`, 'win');
+        return;
+      }
+      // 敌方反击：伤害 = 敌流派基础 × 敌人 power；已装备护甲减伤
+      const armor = hero.equipped.armor ? 0.82 : 1;
+      const back = strike(enemyDef.school, enemyDef.qi, enemyDef.wit, enemyDef.power * armor, hero.wit, hero.qi);
+      const backLine = strikeText('enemy', enemyDef.name, enemyDef.school, back);
+      pushBattleLine(backLine.text, backLine.tone);
+      addFx([fxFrom('player', back)]);
+      playerHp = Math.max(0, playerHp - back.dmg);
+      if (playerHp <= 0) {
+        pushBattleLine('【败】你眼前一黑，倒了下去。', 'lose');
+        finish('lose');
+        return;
+      }
+      // 敌方拳法同样能把你震晕
+      if (enemyDef.school === 'quan' && back.kind === 'hit' && Math.random() * 100 < (back.crit ? 30 : 15)) {
+        playerStun = Math.max(playerStun, back.crit ? 2 : 1);
+        pushBattleLine(`你被${enemyDef.name}一拳震得眼前发黑，眩晕 ${playerStun} 回合！`, 'lose');
+      }
+      // 敌方刀法也可能让你流血
+      const freshOnPlayer = bleedFrom(enemyDef.school, back);
+      if (freshOnPlayer) {
+        playerBleed = freshOnPlayer;
+        pushBattleLine(`你的手臂被划开一道口子，血流不止（剩 ${freshOnPlayer.rounds} 回合，每回合 ${freshOnPlayer.dmg} 点）。`, 'lose');
+      }
+    };
+
+    // ——— 先手判定 ———
+    const pSpeed = heroSpeed(hero);
+    const eSpeed = enemySpeed(enemyDef);
+    const playerFirst = rollFirst(pSpeed, eSpeed);
+    pushBattleLine(
+      `第${battle.round}回合 · ${playerFirst ? '你' : enemyDef.name}抢得先机（速度 ${pSpeed} : ${eSpeed}）。`,
+      'info',
+    );
+    if (playerFirst) {
+      playerTurn();
+      if (!done) enemyTurn();
     } else {
-      // 服药：按指定药品消耗一瓶，回复气血，让出这一回合
-      const med = medName && hero.items.includes(medName) ? medName : null;
-      if (!med) return;
-      const amount = MEDS[med]?.heal ?? 0;
-      nextHero = applyEffects(hero, { removeItems: [med] });
-      playerHp = Math.min(hero.maxHp, playerHp + amount);
-      setHero(nextHero);
-      pushBattleLine(`你服下${med}，气血回复 ${amount} 点（余 ${itemCount(nextHero, med)} 瓶）。`, 'win');
+      enemyTurn();
+      if (!done) playerTurn();
     }
-
-    // 敌方反击：伤害 = 敌流派基础 × 敌人 power；已装备护甲减伤
-    const armor = hero.equipped.armor ? 0.82 : 1;
-    const back = strike(enemyDef.school, enemyDef.qi, enemyDef.wit, enemyDef.power * armor, hero.wit, hero.qi);
-    const backLine = strikeText('enemy', enemyDef.name, enemyDef.school, back);
-    pushBattleLine(backLine.text, backLine.tone);
-    playerHp = Math.max(0, playerHp - back.dmg);
-
-    if (playerHp <= 0) {
-      pushBattleLine('【败】你眼前一黑，倒了下去。', 'lose');
-      setBattle((prev) => (prev ? { ...prev, enemyHp, playerHp: 0, over: 'lose' } : prev));
-      return;
-    }
-    // 敌方刀法也可能让你流血
-    const freshOnPlayer = bleedFrom(enemyDef.school, back);
-    if (freshOnPlayer) {
-      playerBleed = freshOnPlayer;
-      pushBattleLine(`你的手臂被划开一道口子，血流不止（剩 ${freshOnPlayer.rounds} 回合，每回合 ${freshOnPlayer.dmg} 点）。`, 'lose');
-    }
+    if (done) return;
 
     // 回合末结算双方流血
     if (enemyBleed) {
       const tick = enemyBleed;
       enemyHp = Math.max(0, enemyHp - tick.dmg);
+      addFx([{ side: 'enemy', text: `🩸-${tick.dmg}`, tone: 'dmg' }]);
       enemyBleed = tick.rounds > 1 ? { ...tick, rounds: tick.rounds - 1 } : null;
       pushBattleLine(`${enemyDef.name}血流不止，再失 ${tick.dmg} 点气血${enemyBleed ? `（剩 ${enemyBleed.rounds} 回合）` : '（血流渐止）'}。`, 'win');
       if (enemyHp <= 0) {
         pushBattleLine(`【胜】${enemyDef.name}血尽倒地。`, 'win');
-        setBattle((prev) => (prev ? { ...prev, enemyHp: 0, playerHp, over: 'win' } : prev));
+        finish('win');
         return;
       }
     }
     if (playerBleed) {
       const tick = playerBleed;
       playerHp = Math.max(0, playerHp - tick.dmg);
+      addFx([{ side: 'player', text: `🩸-${tick.dmg}`, tone: 'dmg' }]);
       playerBleed = tick.rounds > 1 ? { ...tick, rounds: tick.rounds - 1 } : null;
       pushBattleLine(`你的伤口仍在流血，又失 ${tick.dmg} 点气血${playerBleed ? `（剩 ${playerBleed.rounds} 回合）` : '（血已止住）'}。`, 'lose');
       if (playerHp <= 0) {
         pushBattleLine('【败】失血过多，你眼前一黑。', 'lose');
-        setBattle((prev) => (prev ? { ...prev, enemyHp, playerHp: 0, over: 'lose' } : prev));
+        finish('lose');
         return;
       }
     }
@@ -1586,11 +1792,12 @@ export function JianghuGame() {
       const healed = Math.min(hero.maxHp, playerHp + regen) - playerHp;
       if (healed > 0) {
         playerHp += healed;
+        addFx([{ side: 'player', text: `+${healed}`, tone: 'heal' }]);
         pushBattleLine(`你内息流转，缓过 ${healed} 点气血。`, 'win');
       }
     }
     setBattle((prev) =>
-      prev ? { ...prev, enemyHp, playerHp, enemyBleed, playerBleed, round: prev.round + 1 } : prev,
+      prev ? { ...prev, enemyHp, playerHp, enemyBleed, playerBleed, playerStun, enemyStun, round: prev.round + 1 } : prev,
     );
   };
 
@@ -1662,9 +1869,59 @@ export function JianghuGame() {
   const selectedOrigin = originKey ? ORIGINS.find((o) => o.key === originKey) ?? null : null;
   const sceneKey = NODE_SCENE[nodeId] ?? (node?.chapter === 1 ? 'luoyang-snow' : node?.chapter === 2 ? 'jiangnan' : 'peak');
   const scene = SCENES[sceneKey];
+  const playerFx = battleFx.filter((f) => f.side === 'player');
+  const enemyFx = battleFx.filter((f) => f.side === 'enemy');
+  const lastPlayerFx = playerFx[playerFx.length - 1];
+  const lastEnemyFx = enemyFx[enemyFx.length - 1];
+  const FX_COLOR: Record<FxEvent['tone'], string> = {
+    dmg: 'text-danger',
+    crit: 'text-warning',
+    heal: 'text-success',
+    dodge: 'text-faint',
+    parry: 'text-warning',
+  };
 
   return (
     <div className="w-full max-w-3xl mx-auto">
+      <style>{`
+        @keyframes jh-fx-rise {
+          0% { opacity: 0; transform: translateY(8px) scale(0.7); }
+          20% { opacity: 1; transform: translateY(-2px) scale(1.08); }
+          100% { opacity: 0; transform: translateY(-32px) scale(1); }
+        }
+        .jh-fx { animation: jh-fx-rise 0.78s ease-out forwards; }
+        @keyframes jh-flash { 0% { opacity: 0; } 12% { opacity: 0.85; } 100% { opacity: 0; } }
+        .jh-flash { animation: jh-flash 0.5s ease-out forwards; }
+        @keyframes jh-chapter-in {
+          0% { opacity: 0; transform: scale(1.08); }
+          18% { opacity: 1; transform: scale(1); }
+          80% { opacity: 1; }
+          100% { opacity: 0; }
+        }
+        .jh-chapter { animation: jh-chapter-in 1.9s ease forwards; }
+        @keyframes jh-fade-up {
+          0% { opacity: 0; transform: translateY(8px); }
+          100% { opacity: 1; transform: translateY(0); }
+        }
+        .jh-fade { animation: jh-fade-up 0.32s ease-out; }
+      `}</style>
+
+      {/* 章节过场卡 */}
+      {chapterIntro && (
+        <div
+          key={chapterIntro.key}
+          className="jh-chapter fixed inset-0 z-[80] flex items-center justify-center bg-black/85 backdrop-blur-sm"
+        >
+          <div className="text-center">
+            <div className="text-[11px] tracking-[0.7em] text-white/45">第 · {chapterIntro.chapter} · 章</div>
+            <div className="mt-3 text-3xl font-bold tracking-[0.3em] text-[#efe6d2]">
+              {CHAPTER_LABELS[chapterIntro.chapter].split('·')[1]?.trim()}
+            </div>
+            <div className="mx-auto mt-4 h-px w-24 bg-white/30" />
+          </div>
+        </div>
+      )}
+
       {/* ════ 出身选择：卷轴式开局面板（仿「捕快招募」） ════ */}
       {phase === 'origin' && (
         <div className="mx-auto max-w-md">
@@ -1683,6 +1940,11 @@ export function JianghuGame() {
                 <div className="mt-1 text-[11px] text-[#6b655a]">
                   {saveData.playerName} · {saveData.hero.origin} · Lv.{saveData.hero.level} · {NODES[saveData.nodeId]?.title ?? '江湖'}
                 </div>
+                {idlePreview && (
+                  <div className="mt-1 text-[11px] text-[#7a5a1e]">
+                    🕯 离线挂机 {idlePreview.minutes} 分钟：经验 +{idlePreview.exp}、银两 +{idlePreview.silver}
+                  </div>
+                )}
                 <div className="mt-2 flex gap-2">
                   <button
                     type="button"
@@ -1843,12 +2105,13 @@ export function JianghuGame() {
                 <span>{playerName} · {hero.origin} · {SCHOOLS[hero.school].name}</span>
                 <span className="text-[10px] font-normal text-faint">{SCHOOLS[hero.school].weapon}</span>
               </div>
-              <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] text-muted sm:grid-cols-5">
+              <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] text-muted sm:grid-cols-3">
                 <span>❤️ 气血 {hero.hp}/{hero.maxHp}</span>
                 <span>🔷 内力 {hero.qi}</span>
                 <span>📖 悟性 {hero.wit}</span>
                 <span>⚖️ 侠义 {hero.chivalry}</span>
                 <span>💰 银两 {hero.silver}</span>
+                <span>💨 速度 {heroSpeed(hero)}</span>
               </div>
               <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-surface-raised">
                 <div className="h-full rounded-full bg-danger transition-all" style={{ width: `${(hero.hp / hero.maxHp) * 100}%` }} />
@@ -1928,7 +2191,7 @@ export function JianghuGame() {
             </div>
           ) : event ? (
             /* 奇遇事件 */
-            <div className="rounded-xl border border-warning/40 bg-warning/5 p-4">
+            <div key={event.ev.id} className="jh-fade rounded-xl border border-warning/40 bg-warning/5 p-4">
               <div className="mb-1 text-sm font-semibold text-warning">江湖奇遇 · {event.ev.title}</div>
               <p className="mb-3 text-[13px] leading-relaxed text-content">{event.ev.text}</p>
               <div className="space-y-2">
@@ -1937,7 +2200,7 @@ export function JianghuGame() {
                     key={i}
                     type="button"
                     onClick={() => chooseEvent(c)}
-                    className="flex w-full items-center justify-between rounded-lg border border-line bg-card px-3 py-2.5 text-left text-[13px] text-content transition-colors hover:border-warning/50"
+                    className="flex w-full items-center justify-between rounded-lg border border-line bg-card px-3 py-2.5 text-left text-[13px] text-content transition-all hover:translate-x-0.5 hover:border-warning/50"
                   >
                     <span>{c.label}</span>
                     <span className="ml-3 flex shrink-0 gap-1.5 text-[10px]">
@@ -1952,7 +2215,7 @@ export function JianghuGame() {
             </div>
           ) : (
             /* 剧情正文 + 抉择 */
-            <div className="rounded-xl border border-line bg-card p-4">
+            <div key={nodeId} className="jh-fade rounded-xl border border-line bg-card p-4">
               <p className="mb-4 text-[13px] leading-loose text-content">{node.text}</p>
               <div className="space-y-2">
                 {node.choices.map((c, i) => (
@@ -1960,7 +2223,7 @@ export function JianghuGame() {
                     key={i}
                     type="button"
                     onClick={() => choose(c)}
-                    className={`flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left text-[13px] transition-colors ${
+                    className={`flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left text-[13px] transition-all hover:translate-x-0.5 ${
                       c.combat
                         ? 'border-danger/40 bg-danger/5 text-content hover:border-danger/70'
                         : 'border-line bg-surface text-content hover:border-accent/50'
@@ -2161,6 +2424,9 @@ export function JianghuGame() {
             <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
               <span className="chip border border-accent/40 text-accent">战力 ×{heroPower(hero).toFixed(2)}</span>
               <span className="chip border border-line text-muted">装备加成 +{gearBonus(hero)}</span>
+              <span className="chip border border-line text-muted">暴击 +{gearStats(hero).crit}%</span>
+              <span className="chip border border-line text-muted">吸血 {gearStats(hero).lifesteal}%</span>
+              <span className="chip border border-line text-muted">速度 {heroSpeed(hero)}</span>
               <span className="chip border border-line text-muted">银两 {hero.silver}</span>
             </div>
 
@@ -2175,6 +2441,7 @@ export function JianghuGame() {
                     <div className="min-w-0 flex-1 text-[12px] text-content">
                       {name ?? <span className="text-faint">空</span>}
                       {gear && <span className="ml-1 text-[10px] text-accent">战力 +{gear.power}</span>}
+                      {gear && <span className="ml-1 text-[10px] text-faint">{gearAffix(gear)}</span>}
                     </div>
                     {name && (
                       <button
@@ -2206,7 +2473,7 @@ export function JianghuGame() {
                         {equipped && <span className="ml-1 text-[10px] font-normal text-success">已装备</span>}
                       </div>
                       <p className="text-[10px] leading-snug text-faint">
-                        {gear?.desc ?? med?.desc ?? '随身之物，未派上用场。'}
+                        {gear ? `${gear.desc}${gearAffix(gear) ? `（${gearAffix(gear)}）` : ''}` : med?.desc ?? '随身之物，未派上用场。'}
                       </p>
                     </div>
                     {gear && !equipped && (
@@ -2251,7 +2518,7 @@ export function JianghuGame() {
             </div>
 
             <p className="mt-3 text-[10px] leading-relaxed text-faint">
-              ※ 装备只按槽位生效：兵器加战力、护甲减伤；药品在战斗中按瓶消耗 ※
+              ※ 装备只按槽位生效：兵器加战力、护甲减伤；词条为暴击 / 吸血 / 速度；药品在战斗中按瓶消耗 ※
             </p>
           </div>
         </div>
@@ -2278,15 +2545,33 @@ export function JianghuGame() {
             <div className="flex items-start gap-3 px-4 py-3">
               <div className="flex-1">
                 <div className="flex items-center gap-2">
-                  <Portrait name={avatarKey} size={56} ring="border-accent/60" />
+                  <div className="relative">
+                    <Portrait name={avatarKey} size={56} ring="border-accent/60" />
+                    {lastPlayerFx && lastPlayerFx.tone !== 'heal' && (
+                      <span key={`pf-${lastPlayerFx.id}`} className="jh-flash pointer-events-none absolute inset-0 rounded-full bg-white" />
+                    )}
+                    {playerFx.map((f) => (
+                      <span
+                        key={f.id}
+                        className={`jh-fx pointer-events-none absolute inset-0 flex items-center justify-center text-sm font-black drop-shadow ${FX_COLOR[f.tone]}`}
+                      >
+                        {f.text}
+                      </span>
+                    ))}
+                  </div>
                   <div className="min-w-0">
                     <div className="truncate text-[13px] font-semibold text-content">你 · {SCHOOLS[hero.school].name}</div>
                     <div className="text-[10px] text-faint">
-                      会心 {critChance(hero.wit)}% · 敌闪避 {dodgeChance(battle.enemyDef.wit, hero.school)}% · 敌招架 {parryChance(battle.enemyDef.qi, hero.school)}%
+                      速度 {heroSpeed(hero)} · 会心 {clamp(critChance(hero.wit) + gearStats(hero).crit, 8, 60)}% · 敌闪避 {dodgeChance(battle.enemyDef.wit, hero.school)}% · 敌招架 {parryChance(battle.enemyDef.qi, hero.school)}%
                     </div>
                   </div>
                 </div>
                 <HpBar hp={battle.playerHp} maxHp={hero.maxHp} color="bg-success" />
+                {battle.playerStun > 0 && (
+                  <div className="mt-1 text-[10px] text-warning">
+                    🌀 眩晕 · 剩 {battle.playerStun} 回合无法出手
+                  </div>
+                )}
                 {battle.playerBleed && (
                   <div className="mt-1 text-[10px] text-danger">
                     🩸 流血 · 剩 {battle.playerBleed.rounds} 回合（每回合 {battle.playerBleed.dmg}）
@@ -2299,12 +2584,30 @@ export function JianghuGame() {
                   <div className="min-w-0">
                     <div className="truncate text-[13px] font-semibold text-content">{battle.enemyDef.name} · {SCHOOLS[battle.enemyDef.school].name}</div>
                     <div className="text-[10px] text-faint">
-                      你闪避 {dodgeChance(hero.wit, battle.enemyDef.school)}% · 你招架 {parryChance(hero.qi, battle.enemyDef.school)}%
+                      速度 {enemySpeed(battle.enemyDef)} · 你闪避 {dodgeChance(hero.wit, battle.enemyDef.school)}% · 你招架 {parryChance(hero.qi, battle.enemyDef.school)}%
                     </div>
                   </div>
-                  <Portrait name={battle.enemyDef.name} size={56} ring="border-danger/60" />
+                  <div className="relative">
+                    <Portrait name={battle.enemyDef.name} size={56} ring="border-danger/60" />
+                    {lastEnemyFx && lastEnemyFx.tone !== 'heal' && (
+                      <span key={`ef-${lastEnemyFx.id}`} className="jh-flash pointer-events-none absolute inset-0 rounded-full bg-white" />
+                    )}
+                    {enemyFx.map((f) => (
+                      <span
+                        key={f.id}
+                        className={`jh-fx pointer-events-none absolute inset-0 flex items-center justify-center text-sm font-black drop-shadow ${FX_COLOR[f.tone]}`}
+                      >
+                        {f.text}
+                      </span>
+                    ))}
+                  </div>
                 </div>
                 <HpBar hp={battle.enemyHp} maxHp={battle.enemyMaxHp} color="bg-danger" right />
+                {battle.enemyStun > 0 && (
+                  <div className="mt-1 text-right text-[10px] text-warning">
+                    🌀 眩晕 · 剩 {battle.enemyStun} 回合无法出手
+                  </div>
+                )}
                 {battle.enemyBleed && (
                   <div className="mt-1 text-right text-[10px] text-danger">
                     🩸 流血 · 剩 {battle.enemyBleed.rounds} 回合（每回合 {battle.enemyBleed.dmg}）

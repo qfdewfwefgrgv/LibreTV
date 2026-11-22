@@ -75,10 +75,20 @@ interface BattleUnit {
   timer: number;
 }
 
+interface Floater {
+  id: string;
+  row: number;
+  col: number;
+  text: string;
+  tone: 'dmg' | 'crit' | 'heal' | 'death';
+}
+
 interface TickResult {
   units: BattleUnit[];
   events: string[];
   winner: Team | null;
+  hits: string[];
+  floaters: Floater[];
 }
 
 /** 10 种棋子：费用 1~5，基础生命/攻击/攻速/射程/羁绊 */
@@ -425,6 +435,8 @@ function aliveCount(units: BattleUnit[], team: Team): number {
 function simulateTick(input: BattleUnit[]): TickResult {
   const units = input.map((u) => ({ ...u }));
   const events: string[] = [];
+  const hits: string[] = [];
+  const floaters: Floater[] = [];
 
   for (const u of units) {
     if (u.hp > 0) u.timer += u.aspd * TICK_SECONDS;
@@ -447,6 +459,14 @@ function simulateTick(input: BattleUnit[]): TickResult {
       damage = Math.max(1, Math.round(damage - target.armor));
 
       target.hp -= damage;
+      hits.push(target.uid);
+      floaters.push({
+        id: nextUid('fx'),
+        row: target.row,
+        col: target.col,
+        text: `-${damage}`,
+        tone: crit ? 'crit' : 'dmg',
+      });
       events.push(
         `${crit ? '💥' : '⚔️'} ${unitLabel(u)} → ${unitLabel(target)} -${damage}（剩 ${Math.max(0, target.hp)}）`,
       );
@@ -454,10 +474,20 @@ function simulateTick(input: BattleUnit[]): TickResult {
       if (u.lifesteal > 0) {
         const heal = Math.max(1, Math.round(damage * u.lifesteal));
         u.hp = Math.min(u.maxHp, u.hp + heal);
+        floaters.push({ id: nextUid('fx'), row: u.row, col: u.col, text: `+${heal}`, tone: 'heal' });
         events.push(`🩸 ${unitLabel(u)} 吸血 +${heal}`);
       }
 
-      if (target.hp <= 0) events.push(`💀 ${unitLabel(target)} 倒下`);
+      if (target.hp <= 0) {
+        floaters.push({
+          id: nextUid('fx'),
+          row: target.row,
+          col: target.col,
+          text: '💀',
+          tone: 'death',
+        });
+        events.push(`💀 ${unitLabel(target)} 倒下`);
+      }
     } else {
       const step = stepToward(u, nearest, units);
       if (step) {
@@ -473,7 +503,7 @@ function simulateTick(input: BattleUnit[]): TickResult {
   if (enemyAlive === 0) winner = 'player';
   else if (playerAlive === 0) winner = 'enemy';
 
-  return { units, events, winner };
+  return { units, events, winner, hits, floaters };
 }
 
 function logTone(line: string): string {
@@ -498,6 +528,10 @@ export function AutoChessGame() {
   const [selected, setSelected] = useState<SlotRef | null>(null);
   const [battleUnits, setBattleUnits] = useState<BattleUnit[]>([]);
   const [battleOutcome, setBattleOutcome] = useState<Outcome>(null);
+  const [hitSet, setHitSet] = useState<Set<string>>(() => new Set());
+  const [floaters, setFloaters] = useState<Floater[]>([]);
+  const [speed, setSpeed] = useState(1);
+  const [enemyRoster, setEnemyRoster] = useState<BattleUnit[]>(() => createEnemyUnits(1));
   const [gameResult, setGameResult] = useState<Outcome>(null);
   const [totalWins, setTotalWins] = useState(0);
   const [log, setLog] = useState<string[]>([
@@ -507,6 +541,8 @@ export function AutoChessGame() {
 
   const battleRef = useRef<BattleUnit[]>([]);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const tickFnRef = useRef<(() => void) | null>(null);
+  const speedRef = useRef(1);
   const tickCountRef = useRef(0);
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const logBoxRef = useRef<HTMLDivElement | null>(null);
@@ -529,14 +565,6 @@ export function AutoChessGame() {
       return { trait, count, tier };
     }).filter((item) => item.count > 0);
   }, [board]);
-
-  const battleMap = useMemo(() => {
-    const map = new Map<string, BattleUnit>();
-    for (const u of battleUnits) {
-      if (u.hp > 0) map.set(`${u.row}-${u.col}`, u);
-    }
-    return map;
-  }, [battleUnits]);
 
   const showNotice = useCallback((message: string) => {
     setNotice(message);
@@ -706,7 +734,9 @@ export function AutoChessGame() {
       clearInterval(tickRef.current);
       tickRef.current = null;
     }
+    tickFnRef.current = null;
     setBattleUnits(units);
+    setHitSet(new Set());
 
     const enemiesLeft = aliveCount(units, 'enemy');
     const playersLeft = aliveCount(units, 'player');
@@ -769,7 +799,7 @@ export function AutoChessGame() {
     tickCountRef.current = 0;
 
     const players = buildPlayerUnits(board);
-    const enemies = createEnemyUnits(round);
+    const enemies = enemyRoster.map((u) => ({ ...u }));
     const all = [...players, ...enemies];
     const activeText =
       synergyList
@@ -779,6 +809,8 @@ export function AutoChessGame() {
 
     battleRef.current = all;
     setBattleUnits(all);
+    setHitSet(new Set());
+    setFloaters([]);
     setSelected(null);
     setBattleOutcome(null);
     setPhase('battle');
@@ -787,11 +819,21 @@ export function AutoChessGame() {
       `我方 ${players.length} 人 vs 敌方 ${enemies.length} 人 · 羁绊：${activeText}`,
     ]);
 
-    tickRef.current = setInterval(() => {
+    const tick = () => {
       tickCountRef.current += 1;
       const result = simulateTick(battleRef.current);
       battleRef.current = result.units;
       setBattleUnits(result.units);
+      setHitSet(new Set(result.hits));
+
+      if (result.floaters.length > 0) {
+        const incoming = result.floaters;
+        setFloaters((prev) => [...prev, ...incoming]);
+        const ids = new Set(incoming.map((f) => f.id));
+        setTimeout(() => {
+          setFloaters((prev) => prev.filter((f) => !ids.has(f.id)));
+        }, 850);
+      }
 
       if (result.events.length > 0) {
         setLog((prev) => [...prev, ...result.events].slice(-120));
@@ -812,7 +854,20 @@ export function AutoChessGame() {
         }
         finishBattle(result.units, winner);
       }
-    }, TICK_MS);
+    };
+
+    tickFnRef.current = tick;
+    tickRef.current = setInterval(tick, TICK_MS / speedRef.current);
+  };
+
+  /** 战斗中切换 1x / 2x 速度：重建计时器，使用当前战斗的 tick 闭包 */
+  const changeSpeed = (value: number) => {
+    setSpeed(value);
+    speedRef.current = value;
+    if (phase === 'battle' && tickRef.current && tickFnRef.current) {
+      clearInterval(tickRef.current);
+      tickRef.current = setInterval(tickFnRef.current, TICK_MS / value);
+    }
   };
 
   const advanceRound = useCallback(() => {
@@ -823,7 +878,9 @@ export function AutoChessGame() {
     setGold((g) => g + income);
     setRound((r) => r + 1);
     setShop(rollShop());
+    setEnemyRoster(createEnemyUnits(round + 1));
     setBattleUnits([]);
+    setFloaters([]);
     setSelected(null);
     setBattleOutcome(null);
     setPhase('prep');
@@ -849,6 +906,8 @@ export function AutoChessGame() {
     }
     battleRef.current = [];
     tickCountRef.current = 0;
+    tickFnRef.current = null;
+    speedRef.current = 1;
 
     setBoard(emptyBoard());
     setBench(Array.from({ length: BENCH_SIZE }, () => null));
@@ -860,6 +919,10 @@ export function AutoChessGame() {
     setSelected(null);
     setBattleUnits([]);
     setBattleOutcome(null);
+    setHitSet(new Set());
+    setFloaters([]);
+    setSpeed(1);
+    setEnemyRoster(createEnemyUnits(1));
     setGameResult(null);
     setTotalWins(0);
     setPhase('prep');
@@ -869,6 +932,14 @@ export function AutoChessGame() {
 
   return (
     <div className="relative w-full">
+      <style>{`
+        @keyframes ac-float-anim {
+          0% { opacity: 0; transform: translateY(4px) scale(0.7); }
+          20% { opacity: 1; transform: translateY(-2px) scale(1); }
+          100% { opacity: 0; transform: translateY(-26px) scale(1); }
+        }
+        .ac-float { animation: ac-float-anim 0.8s ease-out forwards; }
+      `}</style>
       {notice && (
         <div className="pointer-events-none absolute left-1/2 top-2 z-30 -translate-x-1/2 whitespace-nowrap rounded-full bg-accent px-3 py-1 text-[11px] font-semibold text-on-accent shadow-lg">
           {notice}
@@ -880,26 +951,22 @@ export function AutoChessGame() {
         <div className="min-w-0 flex-1">
           <div className="card relative mx-auto w-full max-w-[560px] p-2.5 sm:p-3">
             <div
-              className="grid gap-1 rounded-lg border border-line bg-gradient-to-b from-danger/5 to-accent/5 p-1.5 sm:gap-1.5"
-              style={{ gridTemplateColumns: `repeat(${COLS}, minmax(0, 1fr))` }}
+              className="relative grid rounded-lg border border-line bg-gradient-to-b from-danger/10 via-card/30 to-accent/10 p-1.5"
+              style={{ gridTemplateColumns: `repeat(${COLS}, minmax(0, 1fr))`, gap: '6px' }}
             >
               {Array.from({ length: ROWS }, (_, r) =>
                 Array.from({ length: COLS }, (_, c) => {
                   const index = r * COLS + c;
                   const piece = board[index];
-                  const battleUnit = battleMap.get(`${r}-${c}`);
                   const isSelected = selected?.zone === 'board' && selected.index === index;
                   const deployable = r >= 3;
+                  const battleMode = phase === 'battle' || phase === 'result';
 
-                  const baseTone = battleUnit
-                    ? battleUnit.team === 'player'
-                      ? 'border-accent/50 bg-accent/10'
-                      : 'border-danger/50 bg-danger/10'
-                    : deployable
-                      ? 'border-dashed border-line bg-accent/5 hover:bg-accent/10'
-                      : r < 2
-                        ? 'border-line bg-danger/5'
-                        : 'border-line bg-chip/40';
+                  const baseTone = deployable
+                    ? 'border-dashed border-line bg-accent/5 hover:bg-accent/10'
+                    : r < 3
+                      ? 'border-line/70 bg-danger/5'
+                      : 'border-line bg-chip/40';
 
                   return (
                     <button
@@ -907,36 +974,15 @@ export function AutoChessGame() {
                       type="button"
                       onClick={() => onCellClick(index)}
                       title={
-                        battleUnit
-                          ? `${battleUnit.name} ${battleUnit.hp}/${battleUnit.maxHp}`
-                          : piece
-                            ? `${getDef(piece.defId).name} ${'★'.repeat(piece.star)}`
-                            : undefined
+                        !battleMode && piece
+                          ? `${getDef(piece.defId).name} ${'★'.repeat(piece.star)}`
+                          : undefined
                       }
                       className={`relative flex aspect-square flex-col items-center justify-center rounded-lg border transition-colors ${baseTone} ${
                         isSelected ? 'ring-2 ring-warning' : ''
                       }`}
                     >
-                      {battleUnit ? (
-                        <>
-                          <span className="text-base leading-none sm:text-xl">{battleUnit.emoji}</span>
-                          {battleUnit.star > 1 && (
-                            <span className="absolute left-1 top-0.5 text-[9px] leading-none text-warning">
-                              {'★'.repeat(battleUnit.star)}
-                            </span>
-                          )}
-                          <div className="absolute inset-x-1 bottom-1 h-1 overflow-hidden rounded-full bg-line">
-                            <div
-                              className={`h-full rounded-full ${
-                                battleUnit.team === 'player' ? 'bg-success' : 'bg-danger'
-                              }`}
-                              style={{
-                                width: `${Math.max(0, battleUnit.hp) / battleUnit.maxHp * 100}%`,
-                              }}
-                            />
-                          </div>
-                        </>
-                      ) : piece ? (
+                      {!battleMode && piece ? (
                         <>
                           <span className="text-base leading-none sm:text-xl">
                             {getDef(piece.defId).emoji}
@@ -948,15 +994,104 @@ export function AutoChessGame() {
                             {getDef(piece.defId).name}
                           </span>
                         </>
-                      ) : r < 2 ? (
+                      ) : !battleMode && r < 3 ? (
                         <span className="text-[10px] leading-none text-danger/50">敌</span>
-                      ) : deployable ? (
+                      ) : !battleMode && deployable ? (
                         <span className="text-[10px] leading-none text-faint">＋</span>
                       ) : null}
                     </button>
                   );
                 }),
               )}
+
+              {/* 战斗单位浮层：绝对定位 + transform 过渡，实现平滑移动 */}
+              <div
+                className="pointer-events-none absolute"
+                style={{ top: 6, left: 6, right: 6, bottom: 6 }}
+              >
+                {battleUnits.map((u) => {
+                  const dead = u.hp <= 0;
+                  const hit = hitSet.has(u.uid);
+                  const teamCls =
+                    u.team === 'player'
+                      ? 'border-accent/60 bg-accent/15'
+                      : 'border-danger/60 bg-danger/15';
+                  const aura =
+                    u.star >= 3
+                      ? 'shadow-[0_0_12px_rgba(250,204,21,0.65)]'
+                      : u.star === 2
+                        ? 'shadow-[0_0_8px_rgba(250,204,21,0.4)]'
+                        : '';
+                  return (
+                    <div
+                      key={u.uid}
+                      className="ac-unit absolute left-0 top-0"
+                      style={{
+                        width: 'calc((100% - 30px) / 6)',
+                        height: 'calc((100% - 30px) / 6)',
+                        transform: `translate(calc(${u.col} * (100% + 6px)), calc(${u.row} * (100% + 6px)))`,
+                        opacity: dead ? 0 : 1,
+                        transition: 'transform .26s cubic-bezier(0.4,0,0.2,1), opacity .3s ease',
+                      }}
+                    >
+                      <div
+                        className={`relative flex h-full w-full flex-col items-center justify-center rounded-lg border ${teamCls} ${aura} ${
+                          hit && !dead ? 'ring-2 ring-danger' : ''
+                        }`}
+                        style={{
+                          transform: dead ? 'scale(0.5)' : hit ? 'scale(1.06)' : 'scale(1)',
+                          transition:
+                            'transform .24s ease, box-shadow .3s ease, background-color .15s ease, border-color .15s ease',
+                        }}
+                      >
+                        <span className="text-base leading-none sm:text-xl">{u.emoji}</span>
+                        {u.star > 1 && (
+                          <span className="absolute left-1 top-0.5 text-[9px] leading-none text-warning">
+                            {'★'.repeat(u.star)}
+                          </span>
+                        )}
+                        <div className="absolute inset-x-1 bottom-1 h-1 overflow-hidden rounded-full bg-black/30">
+                          <div
+                            className={`h-full rounded-full ${
+                              u.team === 'player' ? 'bg-success' : 'bg-danger'
+                            }`}
+                            style={{
+                              width: `${(Math.max(0, u.hp) / u.maxHp) * 100}%`,
+                              transition: 'width .2s ease',
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {floaters.map((f) => (
+                  <div
+                    key={f.id}
+                    className="absolute left-0 top-0 flex items-center justify-center"
+                    style={{
+                      width: 'calc((100% - 30px) / 6)',
+                      height: 'calc((100% - 30px) / 6)',
+                      transform: `translate(calc(${f.col} * (100% + 6px)), calc(${f.row} * (100% + 6px)))`,
+                    }}
+                  >
+                    <span
+                      className={`ac-float text-[11px] font-bold sm:text-xs ${
+                        f.tone === 'heal'
+                          ? 'text-success'
+                          : f.tone === 'crit'
+                            ? 'text-warning'
+                            : f.tone === 'death'
+                              ? 'text-danger'
+                              : 'text-content'
+                      }`}
+                    >
+                      {f.text}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
 
             {phase === 'result' && battleOutcome && (
@@ -1096,6 +1231,48 @@ export function AutoChessGame() {
                 🔄 刷新 2🪙
               </button>
             </div>
+
+            <div className="mt-2 flex items-center justify-between text-[11px]">
+              <span className="text-faint">⚡ 战斗速度</span>
+              <div className="flex gap-1">
+                {[1, 2].map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => changeSpeed(v)}
+                    className={`chip ${
+                      speed === v
+                        ? 'bg-accent text-on-accent'
+                        : 'bg-chip text-muted hover:text-content'
+                    }`}
+                  >
+                    {v}x
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* 本轮对手预览：决定出装/站位前先侦察 */}
+          <div className="card p-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-semibold text-content">🔭 本轮对手</h3>
+              <span className="text-[10px] text-faint">
+                第 {round} 回合 · {enemyRoster.length} 人
+              </span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {enemyRoster.map((u) => (
+                <span
+                  key={u.uid}
+                  className="flex items-center gap-1 rounded-md border border-danger/25 bg-danger/5 px-1.5 py-1 text-[11px]"
+                >
+                  <span>{u.emoji}</span>
+                  <span className="text-faint">{u.name}</span>
+                </span>
+              ))}
+            </div>
+            <p className="mt-2 text-[10px] text-faint">敌方阵容每回合刷新，先看清弱点再布阵。</p>
           </div>
 
           {/* 商店 */}
