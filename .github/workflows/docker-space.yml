@@ -1,0 +1,61 @@
+name: docker-space
+
+# 构建带 /space 与完整游戏 chunk 的镜像，推送到 GHCR。
+# 触发：推送到 feat/space，或在 Actions 页面手动运行。
+on:
+  push:
+    branches: [feat/space]
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'Dockerfile'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'next.config.ts'
+      - '.github/workflows/docker-space.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/libretv:space-${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/libretv:space-latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify image contents
+        run: |
+          IMAGE="ghcr.io/${{ github.repository_owner }}/libretv:space-${GITHUB_SHA}"
+          docker run --rm --entrypoint sh "$IMAGE" -c '
+            set -e
+            test -f /app/.next/server/app/space/page.js
+            test -f /app/public/space/beyond.html
+            test -f /app/.next/server/app/game/page_client-reference-manifest.js
+            cd /app
+            missing=0
+            for f in $(grep -rhoE "static/chunks/[^\"]*\.js" .next/server/app/game/page_client-reference-manifest.js | sort -u); do
+              if [ ! -f ".next/$f" ]; then echo "MISSING $f"; missing=1; fi
+            done
+            test "$missing" -eq 0
+            echo "IMAGE_OK"
+          '
