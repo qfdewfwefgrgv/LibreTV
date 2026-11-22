@@ -60,7 +60,14 @@ const texLoader = new THREE.TextureLoader();
 const tex = (url, srgb) => new Promise(res => texLoader.load(url, t => { if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy()); res(t); }, undefined, () => res(null)));
 const nextFrame = () => new Promise(r => requestAnimationFrame(() => r()));
 
+// 行星贴图：首屏只取 _lo 占位，完整分辨率在后台替换，避免开场等待约 1.6 MB
+const PLANET_SPECS = ['sun', 'mercury', 'venus:venus_atmosphere', 'mars', 'jupiter:jupiter_4k', 'saturn', 'uranus', 'neptune', 'pluto', 'eris', 'makemake', 'moon', 'ceres', 'haumea'].map(k => {
+  const [key, file] = k.includes(':') ? k.split(':') : [k, k + '_2k'];
+  return { key, base: file.endsWith('4k') || file.endsWith('_2k') ? file : file + '_2k' };
+});
+
 let earth, solar, galaxy, pipe, keys, spinQ, dash = null;
+let ptexRef = null, milkyRef = null;
 const layers = [
   { name: 'L2', scene: null, cam: new THREE.PerspectiveCamera(45, 1, 1e-3, 1e6), active: true },
   { name: 'L1', scene: null, cam: new THREE.PerspectiveCamera(45, 1, 1e-4, 400), active: true },
@@ -72,8 +79,8 @@ const master = new THREE.PerspectiveCamera(45, 1, 1e-9, 1e12);   // the art-AU c
 async function load() {
   status(0.04, 'CALIBRATING DEEP-SPACE OPTICS');
   const [day, night, surf, cloudT, milky, starsBuf, issM, hubM] = await Promise.all([
-    tex('assets/planets/earth_day_4k.jpg', true), tex('assets/earth/earth_night_4096.jpg', true), tex('assets/earth/earth_bump_roughness_clouds_4096.jpg', false), tex('assets/planets/earth_clouds_4k.jpg', false),
-    new Promise(res => texLoader.load('assets/sky/milkyway_4k.jpg', t => { t.colorSpace = THREE.SRGBColorSpace; t.generateMipmaps = false; t.minFilter = THREE.LinearFilter; res(t); }, undefined, () => res(null))),
+    tex('assets/planets/earth_day_4k.webp', true), tex('assets/earth/earth_night_4096.webp', true), tex('assets/earth/earth_bump_roughness_clouds_4096.webp', false), tex('assets/planets/earth_clouds_4k.webp', false),
+    new Promise(res => texLoader.load('assets/sky/milkyway_1k.webp', t => { t.colorSpace = THREE.SRGBColorSpace; t.generateMipmaps = false; t.minFilter = THREE.LinearFilter; res(t); }, undefined, () => res(null))),
     fetch('assets/sky/stars.bin').then(r => r.ok ? r.arrayBuffer() : null).catch(() => null),
     loadModel('assets/models/iss.glb'), loadModel('assets/models/hubble.glb'),
   ]);
@@ -84,21 +91,21 @@ async function load() {
   const T = { day, night, surf, clouds: cloudT };
   if (!day || !surf) throw new Error('Earth textures missing (assets/earth)');
   status(0.55, 'IGNITING 10,000 PLANETARY ENGINES'); await nextFrame();
-  const ptex = {};
-  await Promise.all(['sun', 'mercury', 'venus:venus_atmosphere', 'mars', 'jupiter:jupiter_4k', 'saturn', 'uranus', 'neptune', 'pluto', 'eris', 'makemake', 'moon', 'ceres', 'haumea'].map(async k => {
-    const [key, file] = k.includes(':') ? k.split(':') : [k, k + '_2k'];
-    ptex[key] = await tex(`assets/planets/${file.endsWith('4k') ? file : file.endsWith('_2k') ? file : file + '_2k'}.jpg`, true);
+  ptexRef = {};
+  await Promise.all(PLANET_SPECS.map(async ({ key, base }) => {
+    ptexRef[key] = await tex(`assets/planets/${base}_lo.webp`, true);
   }));
-  ptex.saturnRing = await new Promise(res => texLoader.load('assets/planets/saturn_ring.png', t => { t.colorSpace = THREE.SRGBColorSpace; res(t); }, undefined, () => res(null)));
-  T.moon = ptex.moon; ptex.earth = day;
+  ptexRef.saturnRing = await new Promise(res => texLoader.load('assets/planets/saturn_ring.png', t => { t.colorSpace = THREE.SRGBColorSpace; res(t); }, undefined, () => res(null)));
+  T.moon = ptexRef.moon; ptexRef.earth = day;
+  milkyRef = milky;
   const pbrNames = ['metal_plate_02', 'painted_metal_shutter', 'blue_metal_plate'];
   const pbrSets = await Promise.all(pbrNames.map(n => loadPBR('assets/textures', n)));
   const pbr = Object.fromEntries(pbrNames.map((n, i) => [n, pbrSets[i]]));
   earth = buildEarthLayer({ T, models, Q, U, pbr, renderer, milky }); L0.scene = earth.scene;
   status(0.68, 'CHARTING THE SOLAR SYSTEM'); await nextFrame();
-  solar = buildSolarLayer({ Q, U, tex: ptex }); L1.scene = solar.scene;
+  solar = buildSolarLayer({ Q, U, tex: ptexRef }); L1.scene = solar.scene;
   status(0.8, 'MAPPING FOUR HUNDRED BILLION STARS'); await nextFrame();
-  const [galTex, galImg] = await new Promise(res => texLoader.load('assets/sky/milkyway_top_2k.jpg', t => {
+  const [galTex, galImg] = await new Promise(res => texLoader.load('assets/sky/milkyway_top_2k.webp', t => {
     t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
     const c = document.createElement('canvas'); c.width = c.height = 512; const x = c.getContext('2d'); x.drawImage(t.image, 0, 0, 512, 512);
     res([t, { data: x.getImageData(0, 0, 512, 512).data, w: 512, h: 512 }]);
@@ -139,6 +146,25 @@ async function load() {
   pipe.warm();
   await nextFrame();
   status(1, 'READY');
+  requestAnimationFrame(() => { void upgradeAssets(); });
+}
+
+/* 首屏之后在后台把占位贴图换成完整分辨率，不阻塞开场 */
+async function upgradeAssets() {
+  const hiMilky = await tex('assets/sky/milkyway_4k.webp', true);
+  if (hiMilky && milkyRef) {
+    hiMilky.generateMipmaps = false; hiMilky.minFilter = THREE.LinearFilter;
+    milkyRef.image = hiMilky.image;
+    milkyRef.needsUpdate = true;
+  }
+  await Promise.all(PLANET_SPECS.map(async ({ key, base }) => {
+    const hi = await tex(`assets/planets/${base}.webp`, true);
+    const target = ptexRef && ptexRef[key];
+    if (hi && target) {
+      target.image = hi.image;
+      target.needsUpdate = true;
+    }
+  }));
 }
 
 /* ------------------------------------------------------------------ state */

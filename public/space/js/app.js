@@ -161,7 +161,7 @@ const PBR = {};   // scanned texture sets (Poly Haven, CC0), filled by loadMater
 async function loadMaterials() {
   const names = ['metal_plate_02', 'painted_metal_shutter', 'gray_rocks', 'blue_metal_plate'];
   const [sets, det] = await Promise.all([Promise.all(names.map(n => loadPBR('assets/textures', n))),
-    new Promise(res => texLoader.load('assets/textures/aerial_ground_rock_diff_1k.jpg', t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; res(t); }, undefined, () => res(null)))]);
+    new Promise(res => texLoader.load('assets/textures/aerial_ground_rock_diff_1k.webp', t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; res(t); }, undefined, () => res(null)))]);
   if (!det) { const g = new THREE.DataTexture(new Uint8Array([128, 128, 128, 255]), 1, 1); g.needsUpdate = true; GROUND_DETAIL = g; } else GROUND_DETAIL = det;   // neutral grey if missing
   names.forEach((n, i) => { PBR[n] = sets[i]; });
   const strip = m => { m.map = m.roughnessMap = m.normalMap = null; return m; };
@@ -324,7 +324,7 @@ const GLSL_NOISE = /* glsl */`
 const SKY = { milky: null, stars: null };
 async function loadSky() {
   const [milky, stars] = await Promise.all([
-    new Promise(res => texLoader.load('assets/sky/milkyway_4k.jpg', t => { t.colorSpace = THREE.SRGBColorSpace; t.generateMipmaps = false; t.minFilter = THREE.LinearFilter; res(t); }, undefined, () => res(null))),
+    new Promise(res => texLoader.load('assets/sky/milkyway_4k.webp', t => { t.colorSpace = THREE.SRGBColorSpace; t.generateMipmaps = false; t.minFilter = THREE.LinearFilter; res(t); }, undefined, () => res(null))),
     fetch('assets/sky/stars.bin').then(r => r.ok ? r.arrayBuffer() : null).catch(() => null),
   ]);
   SKY.milky = milky; SKY.stars = stars && new Float32Array(stars);
@@ -1463,7 +1463,7 @@ function buildJupiter() {
   jupiter = new THREE.Group(); jupiter.visible = false; jupiter.rotation.z = 0.05; scene.add(jupiter);
   // real cloud bands (Solar System Scope, CC BY 4.0) once loaded; the procedural bands stand in until then
   const jMap = { value: null }, jHas = { value: 0 };
-  texLoader.load('assets/planets/jupiter_4k.jpg', t => { t.colorSpace = THREE.SRGBColorSpace; t.wrapS = THREE.RepeatWrapping; t.anisotropy = 8; jMap.value = t; jHas.value = 1; });
+  texLoader.load('assets/planets/jupiter_4k.webp', t => { t.colorSpace = THREE.SRGBColorSpace; t.wrapS = THREE.RepeatWrapping; t.anisotropy = 8; jMap.value = t; jHas.value = 1; });
   jupiter.add(new THREE.Mesh(new THREE.SphereGeometry(JUP_R, 160, 120), new THREE.ShaderMaterial({
     uniforms: { uSun, uTime, uLight, uMap: jMap, uHas: jHas },
     vertexShader: `varying vec3 vP; varying vec3 vN; varying vec3 vW; varying vec2 vUv; void main(){ vUv = uv; vP = normalize(position); vN = normalize(mat3(modelMatrix) * normal); vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
@@ -1952,15 +1952,15 @@ async function init() {
   buildSky();
   scene.environment = buildEnvironment();
   step(0.06, 'RECEIVING ORBITAL SURVEY');
-  const moonP = loadTex(TEX + 'moon_1024.jpg', true);
+  const moonP = loadTex(TEX + 'moon_1024.webp', true);
   let T = null;
   if (Q.hd) {
-    const [day, night, surf] = await Promise.all([loadTex(TEX_HD + 'earth_day_4096.jpg', true), loadTex(TEX_HD + 'earth_night_4096.jpg', true), loadTex(TEX_HD + 'earth_bump_roughness_clouds_4096.jpg', false)]);
+    const [day, night, surf] = await Promise.all([loadTex(TEX_HD + 'earth_day_4096.webp', true), loadTex(TEX_HD + 'earth_night_4096.webp', true), loadTex(TEX_HD + 'earth_bump_roughness_clouds_4096.webp', false)]);
     const s = day && surf ? imageSampler(surf.image) : null;
     if (s) { T = { day, night: night || blackTex(), surf }; landAt = (u, v) => s(u, v, 1) > 0.3; }
   }
   if (!T) {
-    const [day, spec, clouds, night] = await Promise.all([loadTex(TEX + 'earth_atmos_2048.jpg', true), loadTex(TEX + 'earth_specular_2048.jpg', false), loadTex(TEX + 'earth_clouds_1024.png', false), loadTex(TEX + 'earth_lights_2048.png', true)]);
+    const [day, spec, clouds, night] = await Promise.all([loadTex(TEX + 'earth_atmos_2048.webp', true), loadTex(TEX + 'earth_specular_2048.webp', false), loadTex(TEX + 'earth_clouds_1024.png', false), loadTex(TEX + 'earth_lights_2048.png', true)]);
     try {
       const s = day && spec && clouds ? imageSampler(spec.image) : null;
       if (s) { T = { day, night: night || blackTex(), surf: packSurf(spec.image, clouds.image) }; landAt = (u, v) => s(u, v) < 0.5; }
