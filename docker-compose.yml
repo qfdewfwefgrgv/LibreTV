@@ -17,6 +17,7 @@ services:
     volumes:
       - libretv-data:/app/data
       - ./public/hero:/app/public/hero
+      - ./public/space:/app/public/space:ro
       - ./patch/game-client.js:/app/.next/static/chunks/app/game/page-11133448e246553b.js:ro
       - ./patch/game.html:/app/.next/server/app/game.html:ro
       - ./patch/game.rsc:/app/.next/server/app/game.rsc:ro

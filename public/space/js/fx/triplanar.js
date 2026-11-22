@@ -7,7 +7,7 @@ import * as THREE from 'three';
 const loader = new THREE.TextureLoader();
 
 export function loadPBR(base, name, res = '1k') {
-  const get = (map, srgb) => new Promise(res2 => loader.load(`${base}/${name}_${map}_${res}.jpg`, t => {
+  const get = (map, srgb) => new Promise(res2 => loader.load(`${base}/${name}_${map}_${res}.webp`, t => {
     t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; if (srgb) t.colorSpace = THREE.SRGBColorSpace; res2(t);
   }, undefined, () => res2(null)));
   return Promise.all([get('diff', true), get('nor_gl', false), get('arm', false)]).then(([diff, nor, arm]) => {
