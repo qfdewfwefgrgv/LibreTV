@@ -4,8 +4,9 @@ import { useCallback, useRef, useState } from 'react';
 import { Header } from '@/components/header';
 import { cn } from '@/lib/utils';
 
-/** 观测宇宙：嵌入 three.js 天文模拟（MIT 许可），静态资源在 public/space 下 */
+/** 观测宇宙：嵌入 three.js 天文模拟；ORBIT（Apache-2.0）+ Long Departure（MIT） */
 const CHAPTERS = [
+  { id: 'orbit', label: '探索宇宙 · ORBIT', src: '/space/orbit/index.html' },
   { id: 'beyond', label: '第二部 · 星际边界', src: '/space/beyond.html' },
   { id: 'earth', label: '第一部 · 启程', src: '/space/index.html' },
 ] as const;
@@ -13,7 +14,7 @@ const CHAPTERS = [
 type ChapterId = (typeof CHAPTERS)[number]['id'];
 
 export default function SpacePage() {
-  const [chapterId, setChapterId] = useState<ChapterId>('beyond');
+  const [chapterId, setChapterId] = useState<ChapterId>('orbit');
   const stageRef = useRef<HTMLDivElement>(null);
   const chapter = CHAPTERS.find((c) => c.id === chapterId) ?? CHAPTERS[0];
 
@@ -32,16 +33,16 @@ export default function SpacePage() {
       <Header />
 
       <div className="flex items-center gap-2 px-4 h-11 border-b shrink-0 bg-surface">
-        <span className="text-sm font-medium text-content shrink-0">观测宇宙</span>
+        <span className="text-sm font-medium text-content shrink-0">探索宇宙</span>
 
-        <div className="flex items-center gap-1 ml-1">
+        <div className="flex items-center gap-1 ml-1 overflow-x-auto">
           {CHAPTERS.map((c) => (
             <button
               key={c.id}
               type="button"
               onClick={() => setChapterId(c.id)}
               className={cn(
-                'px-2.5 py-1 rounded-md text-sm transition-colors',
+                'px-2.5 py-1 rounded-md text-sm transition-colors whitespace-nowrap',
                 c.id === chapterId ? 'text-content bg-hover' : 'text-muted hover:text-content'
               )}
             >
@@ -51,7 +52,9 @@ export default function SpacePage() {
         </div>
 
         <span className="hidden lg:block text-xs text-muted truncate">
-          素材：NASA（公有领域）、Solar System Scope（CC BY 4.0）、three.js（MIT）
+          {chapterId === 'orbit'
+            ? 'ORBIT · Apache-2.0 · NASA / Solar System Scope / three.js'
+            : '素材：NASA（公有领域）、Solar System Scope（CC BY 4.0）、three.js（MIT）'}
         </span>
 
         <div className="ml-auto flex items-center gap-1">

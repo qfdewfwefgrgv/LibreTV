@@ -1,24 +1,49 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import {
+  MERIDIANS,
+  RECIPES_EXT,
+  FORGE_COST,
+  LIFE_SKILL_LABEL,
+  canOpenMeridian,
+  craftSuccessChance,
+  defaultForge,
+  defaultLifeSkills,
+  gainLifeSkill,
+  idleMultiplier,
+  meridianBonuses,
+  type ForgeBoost,
+  type LifeSkills,
+  type MeridianKey,
+} from '@/components/jianghu/cultivation';
+import {
+  BOSS_NAMES,
+  COMBO_MAX,
+  bossPhase,
+  bossPhaseLabel,
+  phasePowerMul,
+  pickEnemyAction,
+  schoolSkills,
+  type BossPhase,
+  type SkillId,
+} from '@/components/jianghu/combat-ext';
+import { CHAPTER4_LABEL, CHAPTER4_NODES, CHAPTER4_SCENES } from '@/components/jianghu/story-ch4';
+import {
+  QUEST_CHAINS,
+  advanceQuestStep,
+  questStepHint,
+  type QuestProgress,
+} from '@/components/jianghu/quests-ext';
 
 /**
- * 江湖风云录：三章文字冒险 + 回合制战斗。
- *
- * 核心设定（按需求实现）：
- * - 三种武器流派，各有特点：
- *   · 拳法：伤害低，但出手沉实，很难被闪避、很难被招架
- *   · 剑法：伤害中规中矩，剑走轻灵很难被闪避，但剑招端正容易被招架
- *   · 刀法：伤害高，但大开大合，容易被闪避、也容易被招架
- *   该特性对敌我双方一视同仁：敌人用什么流派，你闪避/招架它的难易也按此计算。
- * - 场景配图（实物）+ 人物头像（人头）全部内嵌展示。
- *
- * 剧情数据集中在 NODES / EVENTS，applyEffects 为纯函数。
+ * 江湖风云录：四章文字冒险 + 回合制战斗。
+ * 养成 / 战斗扩展模块见 src/components/jianghu/*
  */
 
 // ──────────────────────────── 基础类型 ────────────────────────────
 
-type Chapter = 1 | 2 | 3;
+type Chapter = 1 | 2 | 3 | 4;
 type EndingKey = 'lord' | 'hermit' | 'demon' | 'death';
 type LogTone = 'info' | 'win' | 'lose' | 'event';
 type SchoolKey = 'quan' | 'jian' | 'dao';
@@ -41,6 +66,8 @@ type Combat = {
   loseHp?: number;
   /** 城镇挑战战：胜利后按城镇等级发放武学，不推进剧情 */
   town?: string;
+  /** 悬赏任务战：胜利后发放悬赏奖励，不推进剧情 */
+  quest?: string;
 };
 type Choice = { label: string; effects?: Effects; combat?: Combat; next: string };
 
@@ -79,6 +106,26 @@ type Hero = {
   /** 已学秘籍 / 内功 */
   manualId: string | null;
   innerId: string | null;
+  /** 已拜入门派（六派之一，可无） */
+  sectKey?: string | null;
+  /** 门派贡献：捐银与悬赏积累，可在门派换取 S 级武学 */
+  contribution?: number;
+  /** 酒意：在江湖中行走、饮酒时积攒，满 10 点化为一点酒量 */
+  wine?: number;
+  /** 酒量：每点提升 3 点气血上限（原作「酒意化酒量」只在游戏内转化） */
+  capacity?: number;
+  /** 剑意：胜场累积，每 50 点会心 +2%，至多 +12% */
+  swordIntent?: number;
+  /** 已点亮经脉穴位 */
+  meridians?: MeridianKey[];
+  /** 生活技能 */
+  lifeSkills?: LifeSkills;
+  /** 锻造词条加成（全局，叠在装备上） */
+  forge?: ForgeBoost;
+  /** 秘籍等级（残页升级） */
+  manualLevel?: number;
+  /** 下场战斗临时攻击加成（虎骨膏） */
+  atkBuff?: number;
 };
 
 type LogEntry = { id: number; text: string; tone: LogTone };
@@ -161,6 +208,38 @@ const SCENES: Record<string, { url: string; label: string }> = {
     label: '华山之巅',
     url: img('中国水墨武侠风场景插画，华山之巅日出，云海金光，各派旗帜林立，恢弘大气，横向构图', 'landscape_16_9'),
   },
+  fuzhou: {
+    label: '福州榕城',
+    url: img('中国水墨武侠风场景插画，福州古城坊巷，巨大榕树垂须，青石板路，湿热薄雾，横向构图', 'landscape_16_9'),
+  },
+  hanyang: {
+    label: '汉阳药市',
+    url: img('中国水墨武侠风场景插画，汉阳江边药市，药铺幌子与煎药炉，蒸汽袅袅，百姓往来，横向构图', 'landscape_16_9'),
+  },
+  taishan: {
+    label: '泰山十八盘',
+    url: img('中国水墨武侠风场景插画，泰山十八盘石阶直上云端，日出金光，苍松怪石，横向构图', 'landscape_16_9'),
+  },
+  songshan: {
+    label: '嵩山山门',
+    url: img('中国水墨武侠风场景插画，嵩山古寺山门，千年古柏夹道，石狮斑驳，晨钟薄雾，横向构图', 'landscape_16_9'),
+  },
+  shaolin: {
+    label: '少林藏经阁',
+    url: img('中国水墨武侠风场景插画，少林藏经阁内部，满架经卷，烛火摇曳，木梯幽深，横向构图', 'landscape_16_9'),
+  },
+  wudang: {
+    label: '武当金顶',
+    url: img('中国水墨武侠风场景插画，武当金顶道观，云海翻涌，铜鹤香炉，青瓦飞檐，横向构图', 'landscape_16_9'),
+  },
+  emei: {
+    label: '峨眉金顶',
+    url: img('中国水墨武侠风场景插画，峨眉金顶云海佛光，金殿与经幡，雪松，横向构图', 'landscape_16_9'),
+  },
+  taiyi: {
+    label: '太乙三生塔',
+    url: img('中国水墨武侠风场景插画，太乙山三生塔，古塔三层立于山脊，野草石阶，暮色苍茫，横向构图', 'landscape_16_9'),
+  },
 };
 
 /** 节点 → 场景图 */
@@ -173,24 +252,25 @@ const NODE_SCENE: Record<string, string> = {
   b08: 'sword-mound', b09: 'inn',
   c01: 'peak', c02: 'peak', c03: 'dungeon', c04: 'dungeon', c05: 'peak',
   c06: 'peak', c07: 'peak', c08: 'huashan',
+  ...CHAPTER4_SCENES,
   'end-judge': 'huashan', 'end-lord': 'huashan', 'end-hermit': 'jiangnan',
   'end-demon': 'dungeon', 'end-death': 'mist',
 };
 
-/** 人物头像（人头）：玩家按流派，敌人按身份 */
+/** 人物头像（人头）：玩家按流派，敌人按身份。全部使用本地图片，避免线上接口不可用时空白 */
 const PORTRAITS: Record<string, string> = {
-  quan: img('中国水墨武侠风人物头像特写，布衣拳师，双拳缠着布条，眼神沉稳，方形构图', 'square'),
-  jian: img('中国水墨武侠风人物头像特写，青衫剑客，长剑负于身后，眉目清俊，方形构图', 'square'),
-  dao: img('中国水墨武侠风人物头像特写，劲装刀客，横刀在膝，面容刚毅，方形构图', 'square'),
-  黑塔: img('中国水墨武侠风反派人物头像特写，铁塔般的黑脸壮汉寨主，络腮胡，凶悍，方形构图', 'square'),
-  铁拳门主: img('中国水墨武侠风反派人物头像特写，铁拳门主，虬髯壮汉，双拳硕大，傲慢神情，方形构图', 'square'),
-  血手堂杀手: img('中国水墨武侠风反派人物头像特写，蒙面黑衣杀手，只露双眼，袖口血色手掌纹样，阴冷，方形构图', 'square'),
-  殷无咎: img('中国水墨武侠风反派人物头像特写，魔教教主，面色苍白俊美，黑袍金纹，笑里藏刀，方形构图', 'square'),
-  苏挽: img('中国水墨武侠风女性人物头像特写，白衣女子，眉目坚毅，肩头带伤，方形构图', 'square'),
-  山贼头目: img('中国水墨武侠风反派人物头像特写，山贼头目，乱发包头巾，腮边短须，缺牙狞笑，方形构图', 'square'),
-  独眼掌柜: img('中国水墨武侠风反派人物头像特写，独眼客栈掌柜，单眼戴黑眼罩，肩搭抹布，满脸横肉，方形构图', 'square'),
-  青城弟子: img('中国水墨武侠风人物头像特写，青城派年轻弟子，青色道袍，手持长剑，眉宇傲气，方形构图', 'square'),
-  魔教护法: img('中国水墨武侠风反派人物头像特写，魔教护法，黑红长袍，半面刺青，眼神阴鸷，方形构图', 'square'),
+  quan: '/game/portraits/quan.webp',
+  jian: '/game/portraits/jian.webp',
+  dao: '/game/portraits/dao.webp',
+  黑塔: '/game/portraits/heita.webp',
+  铁拳门主: '/game/portraits/tiequan.webp',
+  血手堂杀手: '/game/portraits/xueshou.webp',
+  殷无咎: '/game/portraits/yinwujiu.webp',
+  苏挽: '/game/portraits/suwan.webp',
+  山贼头目: '/game/portraits/shanzei.webp',
+  独眼掌柜: '/game/portraits/duyan.webp',
+  青城弟子: '/game/portraits/qingcheng.webp',
+  魔教护法: '/game/portraits/mofu.webp',
 };
 
 // ──────────────────────────── 流派（拳 / 剑 / 刀） ────────────────────────────
@@ -305,6 +385,18 @@ const GEAR: Record<string, GearDef> = {
   软甲: { slot: 'armor', power: 10, speed: -2, desc: '贴身软甲，可卸去两成刀伤，只是略碍身法。' },
   青玉哨: { slot: 'accessory', power: 2, crit: 3, speed: 4, desc: '青玉小哨，吹响时能定神提气。' },
   盟主令: { slot: 'accessory', power: 6, crit: 5, speed: 6, desc: '号令群雄的信物，佩之则气势自生。' },
+  // ── 福州藏宝与各地奇珍（原作紫装）：三词条优先 暴击 / 吸血 / 速度 ──
+  青冥剑: { slot: 'weapon', power: 34, crit: 8, lifesteal: 12, speed: 3, desc: '剑身幽青如夜，出鞘时似有鬼泣；紫装中少见的吸血剑。' },
+  支离: { slot: 'weapon', power: 30, crit: 4, lifesteal: 10, speed: 2, desc: '断而复续的残剑，剑意支离，反能饮血自补。' },
+  摘音剑: { slot: 'weapon', power: 26, crit: 6, lifesteal: 6, speed: 5, desc: '剑薄如叶，挥动时摘得清风一缕，快得只剩音。' },
+  金刀: { slot: 'weapon', power: 32, crit: 6, speed: 1, desc: '刀身鎏金，重而不滞，一刀落下如闸门落水。' },
+  非攻: { slot: 'weapon', power: 28, crit: 4, speed: 4, desc: '刀名「非攻」，不轻出鞘；出则只求止杀，不求多伤。' },
+  修罗刀: { slot: 'weapon', power: 28, crit: 6, lifesteal: 4, desc: '刀背刻修罗像，杀气凝而不散。' },
+  真武剑: { slot: 'weapon', power: 24, crit: 5, lifesteal: 6, desc: '武当制式长剑，剑脊刻玄武，沉稳绵长。' },
+  乌缕衣: { slot: 'armor', power: 18, speed: 1, desc: '乌金细缕织成，轻若无物，却能卸去大半刀劲。' },
+  紫金护手: { slot: 'accessory', power: 8, crit: 4, desc: '紫金护手，护住腕脉，出拳更稳更狠。' },
+  青云戒: { slot: 'accessory', power: 6, crit: 5, speed: 3, desc: '青云石磨成的戒指，据说戴着它的人从不在雨里滑倒。' },
+  冰蚕手套: { slot: 'accessory', power: 5, speed: 6, desc: '冰蚕丝织就，触手生凉，出手快得没有声息。' },
 };
 
 /** 词条文字：暴击 / 吸血 / 速度 */
@@ -316,8 +408,9 @@ function gearAffix(gear: GearDef): string {
   return parts.join(' · ');
 }
 
-/** 已装备物品的词条合计 */
-function gearStats(hero: Hero): { power: number; crit: number; lifesteal: number; speed: number } {  const total = { power: 0, crit: 0, lifesteal: 0, speed: 0 };
+/** 已装备物品的词条合计（含锻造与经脉会心） */
+function gearStats(hero: Hero): { power: number; crit: number; lifesteal: number; speed: number } {
+  const total = { power: 0, crit: 0, lifesteal: 0, speed: 0 };
   for (const { slot } of SLOT_LABELS) {
     const name = hero.equipped[slot];
     const gear = name ? GEAR[name] : null;
@@ -327,12 +420,18 @@ function gearStats(hero: Hero): { power: number; crit: number; lifesteal: number
     total.lifesteal += gear.lifesteal ?? 0;
     total.speed += gear.speed ?? 0;
   }
+  const forge = hero.forge ?? defaultForge();
+  total.power += forge.power;
+  total.crit += forge.crit;
+  total.lifesteal += forge.lifesteal;
+  total.speed += forge.speed;
+  total.crit += meridianBonuses(hero.meridians ?? []).crit;
   return total;
 }
 
-/** 玩家出手速度：悟性 + 境界 + 装备 */
+/** 玩家出手速度：悟性 + 境界 + 装备 + 门派轻功 */
 function heroSpeed(hero: Hero): number {
-  return Math.round(10 + hero.wit * 0.16 + hero.level * 0.4 + gearStats(hero).speed);
+  return Math.round(10 + hero.wit * 0.16 + hero.level * 0.4 + gearStats(hero).speed + (sectOf(hero)?.speed ?? 0));
 }
 
 /** 敌人出手速度：悟性与内力共同决定（敌人无装备） */
@@ -360,15 +459,32 @@ const SLOT_LABELS: { slot: GearSlot; label: string }[] = [
 const MEDS: Record<string, { heal: number; desc: string }> = {
   金创药: { heal: 30, desc: '寻常伤药，回复 30 点气血。' },
   还魂草: { heal: 55, desc: '药王谷至宝，回复 55 点气血。' },
+  灵芝散: { heal: 80, desc: '汉阳老药师所制，灵芝入药，回复 80 点气血。' },
+  清心丹: { heal: 10, desc: '解毒清心，驱散流血并微回气血。' },
 };
-const MED_ORDER = ['金创药', '还魂草'];
+const MED_ORDER = ['金创药', '还魂草', '灵芝散', '清心丹'];
 /** 可叠放的消耗品；其余物品（装备、信物）只保留一件 */
-const STACKABLE = new Set(['金创药', '还魂草']);
+const STACKABLE = new Set(['金创药', '还魂草', '灵芝散', '草药', '矿石', '藏宝图碎片', '烧刀子', '虎骨膏', '清心丹', '剑意丸', '残页']);
+
+/** 材料与杂物说明（行囊展示用） */
+const ITEM_DESC: Record<string, string> = {
+  草药: '山野采来的草药，可用于炼丹。',
+  矿石: '含铁的粗矿石，锻造兵器时会用到。',
+  藏宝图碎片: '残缺的藏宝图，集齐三片可在福州挖宝。',
+  烧刀子: '关外烈酒，饮之酒意 +3。江湖上最好用的酒。',
+  无名琴谱: '荒祠拾得的琴谱，曲调清冷，闲时可按谱弹奏。',
+  残页: '武学残页，可用于提升已学秘籍等级。',
+  虎骨膏: '下场战斗攻击临时 +8%。',
+  清心丹: '战斗中驱散流血并微回气血。',
+  剑意丸: '吞服后剑意 +15。',
+};
 
 /** 集市：明码标价，装备限购一件 */
 const SHOP: { name: string; price: number; note: string }[] = [
   { name: '金创药', price: 15, note: '回复 30 气血 · 可叠放' },
   { name: '还魂草', price: 45, note: '回复 55 气血 · 可叠放' },
+  { name: '烧刀子', price: 8, note: '酒意 +3 · 江上烈酒 · 可叠放' },
+  { name: '草药', price: 6, note: '炼丹材料 · 可叠放' },
   { name: '软甲', price: 120, note: '护甲 · 减伤两成 · 速度 -2' },
   { name: '青玉哨', price: 60, note: '饰品 · 战力 +2 · 暴击 +3% · 速度 +4' },
   { name: '柳叶刀', price: 80, note: '兵器 · 战力 +9 · 暴击 +3% · 吸血 6%' },
@@ -377,6 +493,8 @@ const SHOP: { name: string; price: number; note: string }[] = [
 
 /** 本地存档：只存主线状态，战斗与奇遇的临时局面不入档 */
 const SAVE_KEY = 'jianghu.save.v1';
+/** 大厅礼包：claimedIds + pendingRewards，进游发放一次 */
+const GIFTS_KEY = 'jianghu.gifts.v1';
 type SaveData = {
   v: 1;
   playerName: string;
@@ -387,7 +505,56 @@ type SaveData = {
   cleared: string[];
   /** 上次存档时间戳：用于结算离线挂机收益 */
   lastIdle?: number;
+  /** 多步任务进度 */
+  questProgress?: QuestProgress;
+  /** 当前接取中的链式任务 id */
+  activeQuestId?: string | null;
 };
+
+type PendingGiftReward = {
+  giftId: string;
+  giftName: string;
+  items: string[];
+  silver?: number;
+  contribution?: number;
+};
+
+/** 读取并清空 pendingRewards，返回待发放列表（claimedIds 保留防重领） */
+function takePendingGifts(): PendingGiftReward[] {
+  try {
+    const raw = window.localStorage.getItem(GIFTS_KEY);
+    if (!raw) return [];
+    const data = JSON.parse(raw) as { claimedIds?: string[]; pendingRewards?: PendingGiftReward[] };
+    const pending = Array.isArray(data.pendingRewards) ? data.pendingRewards : [];
+    if (pending.length === 0) return [];
+    window.localStorage.setItem(
+      GIFTS_KEY,
+      JSON.stringify({ claimedIds: Array.isArray(data.claimedIds) ? data.claimedIds : [], pendingRewards: [] }),
+    );
+    return pending;
+  } catch {
+    return [];
+  }
+}
+
+function grantPendingGifts(hero: Hero, pending: PendingGiftReward[]): { hero: Hero; lines: string[] } {
+  if (pending.length === 0) return { hero, lines: [] };
+  let next = hero;
+  const lines: string[] = [];
+  for (const gift of pending) {
+    next = applyEffects(next, { items: gift.items, silver: gift.silver });
+    if (gift.contribution) {
+      next = { ...next, contribution: (next.contribution ?? 0) + gift.contribution };
+    }
+    const bits = [
+      gift.items?.length ? gift.items.join('、') : '',
+      gift.silver ? `银两 ×${gift.silver}` : '',
+      gift.contribution ? `贡献 ×${gift.contribution}` : '',
+    ].filter(Boolean);
+    lines.push(`【礼包】领取「${gift.giftName}」：${bits.join(' · ') || '空'}`);
+  }
+  return { hero: next, lines };
+}
 
 // ──────────────────────────── 剧情数据 ────────────────────────────
 
@@ -489,7 +656,7 @@ const NODES: Record<string, StoryNode> = {
     text: '你在崖下乱石堆里醒来，胸口像压了一块磨盘。刀断成两截，黑木匣还在寨里。崖上火光冲天，有人扯着嗓子喊：「别让那小子跑了！」',
     choices: [
       { label: '咬牙再上山，趁乱取匣', effects: { hp: -8, chivalry: 4 }, next: 'a09' },
-      { label: '回洛阳养伤，从长计议', effects: { hp: 10, silver: -10 }, next: 'a09' },
+      { label: '回洛阳养伤，再寻夺匣时机', effects: { hp: 10, silver: -10 }, next: 'a06' },
       { label: '就此离开洛阳', effects: { chivalry: -5 }, next: 'b01' },
     ],
   },
@@ -670,17 +837,20 @@ const NODES: Record<string, StoryNode> = {
   },
   c08: {
     id: 'c08', chapter: 3, title: '华山论剑',
-    text: '三月后，华山之巅，三十六派重立盟约。按江湖规矩，盟主之位需过三问：一问侠义，二问悟性，三问手中刀。风把你的衣角吹得猎猎作响，所有人都在等你开口。',
+    text: '三月后，华山之巅，三十六派重立盟约。按江湖规矩，盟主之位需过三问：一问侠义，二问悟性，三问手中刀。风把你的衣角吹得猎猎作响，所有人都在等你开口——却不知山脚下，余烬已在复燃。',
     choices: [
-      { label: '「江湖不是一个人的江湖。」', effects: { chivalry: 8 }, next: 'end-judge' },
-      { label: '「刀在人在，规矩由我来定。」', effects: { chivalry: -4, qi: 4 }, next: 'end-judge' },
+      { label: '「江湖不是一个人的江湖。」', effects: { chivalry: 8 }, next: 'd01' },
+      { label: '「刀在人在，规矩由我来定。」', effects: { chivalry: -4, qi: 4 }, next: 'd01' },
       { label: '「我志不在盟主。」', next: 'end-hermit' },
     ],
   },
 
+  // ───────────────── 第四章 · 余烬 ─────────────────
+  ...CHAPTER4_NODES,
+
   // ───────────────── 结局 ─────────────────
   'end-judge': {
-    id: 'end-judge', chapter: 3, title: '华山之巅', ending: 'judge',
+    id: 'end-judge', chapter: 4, title: '华山之巅', ending: 'judge',
     text: '风停了。三十六派的旗帜在你身后一字排开，江湖等你给出最后一个答案。你握刀的手很稳，心里却浮起洛阳的雪、江南的雨，以及一路走来所有没有回头的地方。',
     choices: [],
   },
@@ -784,6 +954,49 @@ const INNERS: Inner[] = [
 const manualOf = (hero: Hero) => MANUALS.find((m) => m.id === hero.manualId) ?? null;
 const innerOf = (hero: Hero) => INNERS.find((i) => i.id === hero.innerId) ?? null;
 
+/** 已拜门派（没有则返回 null） */
+function sectOf(hero: Hero): Sect | null {
+  return hero.sectKey ? SECTS.find((s) => s.key === hero.sectKey) ?? null : null;
+}
+
+/** 剑意会心加成：每 50 点 +2%，至多 +12% */
+function swordIntentBonus(hero: Hero): number {
+  return Math.min(12, Math.floor((hero.swordIntent ?? 0) / 50) * 2);
+}
+
+/** 内功反震：A 级 8%、S 级 15%（先免伤，后反伤） */
+function innerReflect(hero: Hero): number {
+  const grade = innerOf(hero)?.grade;
+  if (grade === 'S') return 0.15;
+  if (grade === 'A') return 0.08;
+  return 0;
+}
+
+/** 多段攻击几率：剑法天生二连，A/S 级秘籍再加一些 */
+function multiHitChance(hero: Hero): number {
+  const base = hero.school === 'jian' ? 22 : hero.school === 'dao' ? 10 : 0;
+  const grade = manualOf(hero)?.grade;
+  return base + (grade === 'S' ? 12 : grade === 'A' ? 8 : 0);
+}
+
+/**
+ * 酒意 → 酒量：只有身在江湖（游戏内）才会转化。
+ * 每满 10 点酒意化 1 点酒量，每点酒量加 3 点气血上限。
+ */
+function gainWine(hero: Hero, amount: number): Hero {
+  let wine = (hero.wine ?? 0) + amount;
+  let capacity = hero.capacity ?? 0;
+  let maxHp = hero.maxHp;
+  let hp = hero.hp;
+  while (wine >= 10) {
+    wine -= 10;
+    capacity += 1;
+    maxHp += 3;
+    hp = Math.min(maxHp, hp + 3);
+  }
+  return { ...hero, wine, capacity, maxHp, hp };
+}
+
 // ──────────────────────────── 江湖行程：洛阳 → 襄阳 → 西安 → 燕京 → 华山 ────────────────────────────
 
 type Town = { key: string; name: string; grade: Grade; enemy: string; diff: number; desc: string; reward: string };
@@ -795,6 +1008,145 @@ const TOWNS: Town[] = [
   { key: 'yanjing', name: '燕京', grade: 'A', enemy: '血手堂杀手', diff: 23, desc: '天子脚下，王侯门前，刀客比官府更管用。', reward: 'A 级武学' },
   { key: 'huashan', name: '华山', grade: 'S', enemy: '殷无咎', diff: 30, desc: '西岳险绝，论剑台上旧痕未消，胜者留名。', reward: 'S 级武学' },
 ];
+
+// ──────────────────────────── 门派：六派与门派贡献 ────────────────────────────
+
+type Sect = {
+  key: string;
+  name: string;
+  scene: string;
+  /** 门派被动说明 */
+  passive: string;
+  /** 伤害加成（叠加到战力倍率） */
+  atk?: number;
+  /** 会心加成（百分点） */
+  crit?: number;
+  /** 速度加成 */
+  speed?: number;
+  /** 每回合额外回血 */
+  regen?: number;
+  /** 受到伤害的倍率（越小越抗打） */
+  armor?: number;
+  motto: string;
+};
+
+const SECTS: Sect[] = [
+  {
+    key: 'huashan', name: '华山派', scene: 'huashan', motto: '剑走轻灵，气贯长虹。',
+    passive: '会心 +4%（剑意更盛）', crit: 4,
+  },
+  {
+    key: 'shaolin', name: '少林派', scene: 'shaolin', motto: '禅武合一，金刚不坏。',
+    passive: '伤害 +5%（拳出如锤）', atk: 0.05,
+  },
+  {
+    key: 'emei', name: '峨眉派', scene: 'emei', motto: '云海佛光，剑心通明。',
+    passive: '每回合回血 +2', regen: 2,
+  },
+  {
+    key: 'wudang', name: '武当派', scene: 'wudang', motto: '动静相生，以柔克刚。',
+    passive: '受到伤害 -6%（太极卸力）', armor: 0.94,
+  },
+  {
+    key: 'taiyi', name: '太乙教', scene: 'taiyi', motto: '三生塔下，道法自然。',
+    passive: '速度 +3（踏罡步斗）', speed: 3,
+  },
+  {
+    key: 'songshan', name: '嵩山派', scene: 'songshan', motto: '嵩阳铁剑，势压群峰。',
+    passive: '伤害 +4%、速度 +2', atk: 0.04, speed: 2,
+  },
+];
+
+const SECT_CONTRIB_PRICE = 50; // 捐银 50 两 = 5 点贡献
+const SECT_MANUAL_COST = 60; // 60 贡献换本门 S 级秘籍
+const SECT_INNER_COST = 120; // 120 贡献换 S 级内功
+
+// ──────────────────────────── 悬赏任务：除害 / 寻物 / 护送 ────────────────────────────
+
+type QuestKind = '除害' | '寻物' | '护送' | '链式';
+
+type Quest = {
+  id: string;
+  title: string;
+  kind: QuestKind;
+  scene: string;
+  desc: string;
+  minLevel: number;
+  enemy?: string;
+  difficulty?: number;
+  reward: { exp: number; silver: number; contribution?: number; items?: string[] };
+  steps?: { id: string; hint: string; action: string }[];
+  nextQuestId?: string;
+  tag?: string;
+};
+
+const QUESTS: Quest[] = [
+  {
+    id: 'q-luoyang', title: '黑风余孽', kind: '除害', scene: 'stronghold', minLevel: 1,
+    enemy: '黑塔', difficulty: 8,
+    desc: '黑风寨覆灭后仍有残党在断魂崖劫道，县衙悬赏十两，只求首级。',
+    reward: { exp: 40, silver: 35, contribution: 5 },
+  },
+  {
+    id: 'q-hanyang', title: '汉阳煎药', kind: '寻物', scene: 'hanyang', minLevel: 2,
+    desc: '汉阳药铺的老药师缺一味引子，替他跑一趟江边药市，煎满十五副药。',
+    reward: { exp: 45, silver: 22, contribution: 8, items: ['金创药', '草药'] },
+  },
+  {
+    id: 'q-fuzhou', title: '榕城残图', kind: '寻物', scene: 'fuzhou', minLevel: 3,
+    desc: '福州坊巷里流传一张藏宝图，据说集齐三片残图，能在榕树根下挖出紫装。',
+    reward: { exp: 60, silver: 30, items: ['藏宝图碎片'] },
+  },
+  {
+    id: 'q-taishan', title: '泰山轩辕剑阁', kind: '除害', scene: 'taishan', minLevel: 4,
+    enemy: '青城弟子', difficulty: 20,
+    desc: '轩辕剑阁七波守阁人，一波强过一波；并无硬闯必要，但剑意可在此磨砺。',
+    reward: { exp: 90, silver: 55, contribution: 10, items: ['真武剑'] },
+  },
+  {
+    id: 'q-songshan', title: '嵩山山门试炼', kind: '除害', scene: 'songshan', minLevel: 5,
+    enemy: '铁拳门主', difficulty: 22,
+    desc: '嵩山山门前的试炼石桩，守门人只认拳脚，不认名号。',
+    reward: { exp: 110, silver: 60, contribution: 12 },
+  },
+  {
+    id: 'q-shaolin', title: '藏经阁夜贼', kind: '除害', scene: 'shaolin', minLevel: 6,
+    enemy: '血手堂杀手', difficulty: 24,
+    desc: '有人夜入少林藏经阁，只偷一部旧经。知客僧请你守一夜。',
+    reward: { exp: 130, silver: 70, contribution: 15, items: ['还魂草'] },
+  },
+  {
+    id: 'q-wudang', title: '武当金顶问道', kind: '护送', scene: 'wudang', minLevel: 7,
+    enemy: '魔教护法', difficulty: 26,
+    desc: '一位老道长要上金顶还愿，魔教的人却已在山道上候着。',
+    reward: { exp: 150, silver: 85, contribution: 18, items: ['乌缕衣'] },
+  },
+  {
+    id: 'q-emei', title: '峨眉金顶佛光', kind: '寻物', scene: 'emei', minLevel: 7,
+    desc: '峨眉师太要一株雪线以上的还魂草，云海佛光只在该出现时出现。',
+    reward: { exp: 140, silver: 60, contribution: 12, items: ['还魂草', '紫金护手'] },
+  },
+  {
+    id: 'q-taiyi', title: '太乙三生塔', kind: '除害', scene: 'taiyi', minLevel: 8,
+    enemy: '独眼掌柜', difficulty: 23,
+    desc: '三生塔下有人假扮道人收香火钱，太乙教请你清理门户。',
+    reward: { exp: 160, silver: 95, contribution: 14, items: ['青云戒'] },
+  },
+  {
+    id: 'q-jiangnan', title: '燕子坞护镖', kind: '护送', scene: 'jiangnan', minLevel: 10,
+    enemy: '魔教护法', difficulty: 30,
+    desc: '燕子坞的一船药材要送往襄阳，水路上不太平。',
+    reward: { exp: 220, silver: 140, contribution: 20, items: ['冰蚕手套'] },
+  },
+  // 多步链与主线支线
+  ...(QUEST_CHAINS as unknown as Quest[]),
+];
+
+/** 福州挖宝奖池：原作中能锻造吸血的多为紫装 */
+const TREASURE_POOL = ['青冥剑', '支离', '摘音剑', '金刀', '非攻', '修罗刀', '乌缕衣', '紫金护手', '青云戒', '冰蚕手套'];
+
+/** 炼丹配方：草药 → 成药（含扩展） */
+const RECIPES = RECIPES_EXT;
 
 const EVENTS: RandomEvent[] = [
   {
@@ -920,6 +1272,7 @@ const CHAPTER_LABELS: Record<Chapter, string> = {
   1: '第一章 · 初入江湖',
   2: '第二章 · 名动一方',
   3: '第三章 · 风云际会',
+  4: CHAPTER4_LABEL,
 };
 
 const ENDINGS: Record<EndingKey, { title: string; text: string; tone: string }> = {
@@ -973,7 +1326,46 @@ function makeHero(origin: Origin, school: SchoolKey): Hero {
     exp: 0,
     manualId: null,
     innerId: null,
+    sectKey: null,
+    contribution: 0,
+    wine: 0,
+    capacity: 0,
+    swordIntent: 0,
+    meridians: [],
+    lifeSkills: defaultLifeSkills(),
+    forge: defaultForge(),
+    manualLevel: 1,
+    atkBuff: 0,
   };
+}
+
+/** 读档兼容：补齐养成字段 */
+function normalizeHero(h: Hero): Hero {
+  const meridians = h.meridians ?? [];
+  const mb = meridianBonuses(meridians);
+  const baseMax = Math.max(h.maxHp, originishMaxHp(h));
+  const maxHp = baseMax + mb.maxHp + (h.capacity ?? 0) * 3;
+  return {
+    ...h,
+    items: Array.isArray(h.items) ? h.items : [],
+    equipped: {
+      weapon: h.equipped?.weapon ?? null,
+      armor: h.equipped?.armor ?? null,
+      accessory: h.equipped?.accessory ?? null,
+    },
+    meridians,
+    lifeSkills: h.lifeSkills ?? defaultLifeSkills(),
+    forge: h.forge ?? defaultForge(),
+    manualLevel: h.manualLevel ?? 1,
+    atkBuff: h.atkBuff ?? 0,
+    qi: h.qi + (h.meridians ? 0 : 0) + (meridians.length && !h.meridians ? mb.qi : 0),
+    maxHp,
+    hp: Math.min(h.hp, maxHp),
+  };
+}
+
+function originishMaxHp(h: Hero): number {
+  return Math.max(80, h.maxHp - meridianBonuses(h.meridians ?? []).maxHp);
 }
 
 /** 升到下一级所需经验 */
@@ -986,18 +1378,27 @@ function expNeed(level: number): number {
  * 速率刻意压低——挂一夜约等于手动二十来分钟的收益（原作设定）。
  */
 const IDLE_CAP_MIN = 720;
-function idleGain(minutes: number): { exp: number; silver: number } {
+function idleGain(
+  minutes: number,
+  hero?: Pick<Hero, 'meridians' | 'lifeSkills'> | null,
+): { exp: number; silver: number } {
   const m = clamp(minutes, 0, IDLE_CAP_MIN);
-  return { exp: Math.floor(m * 0.15), silver: Math.floor(m * 0.22) };
+  const mul = hero
+    ? idleMultiplier(hero.meridians ?? [], hero.lifeSkills ?? defaultLifeSkills())
+    : 1;
+  return { exp: Math.floor(m * 0.15 * mul), silver: Math.floor(m * 0.22 * mul) };
 }
 
-/** 当前战力倍率：等级 + 装备 + 同流派秘籍 + 内功 */
+/** 当前战力倍率：等级 + 装备 + 同流派秘籍 + 内功 + 秘籍等级 + 临时虎骨膏 */
 function heroPower(hero: Hero): number {
   const manual = MANUALS.find((m) => m.id === hero.manualId);
   const inner = INNERS.find((i) => i.id === hero.innerId);
+  const manualLv = hero.manualLevel ?? 1;
   let mul = 1 + (hero.level - 1) * 0.05 + gearBonus(hero) / 40;
-  if (manual && manual.school === hero.school) mul += manual.atk;
+  if (manual && manual.school === hero.school) mul += manual.atk + (manualLv - 1) * 0.03;
   if (inner) mul += inner.atk;
+  mul += sectOf(hero)?.atk ?? 0;
+  mul += hero.atkBuff ?? 0;
   return mul;
 }
 
@@ -1092,10 +1493,10 @@ function strike(
 /** 流血：剩余回合与每回合掉血 */
 type Bleed = { rounds: number; dmg: number };
 
-/** 刀法命中后有几率撕裂皮肉：两回合流血，普通 3 点、会心 5 点 */
-function bleedFrom(school: SchoolKey, result: StrikeResult): Bleed | null {
+/** 刀法命中后有几率撕裂皮肉：两回合流血，普通 3 点、会心 5 点；多段攻击更易触发 */
+function bleedFrom(school: SchoolKey, result: StrikeResult, chanceMul = 1): Bleed | null {
   if (school !== 'dao' || result.kind !== 'hit') return null;
-  if (Math.random() * 100 >= 30) return null;
+  if (Math.random() * 100 >= 30 * chanceMul) return null;
   return { rounds: 2, dmg: result.crit ? 5 : 3 };
 }
 
@@ -1113,6 +1514,18 @@ type BattleState = {
   playerStun: number;
   enemyStun: number;
   lines: LogEntry[];
+  /** 连招点 0–COMBO_MAX */
+  combo: number;
+  /** 战斗内息资源 */
+  breath: number;
+  /** 技能冷却剩余回合 */
+  skillCd: Partial<Record<SkillId, number>>;
+  /** Boss 当前阶段 */
+  phase: BossPhase;
+  /** 敌人蓄力中 */
+  enemyCharged: boolean;
+  /** 震屏标记 */
+  shake?: boolean;
 };
 
 /** 战斗飘字/命中特效：side 表示特效落在哪一方 */
@@ -1120,7 +1533,7 @@ type FxEvent = {
   id: number;
   side: 'player' | 'enemy';
   text: string;
-  tone: 'dmg' | 'crit' | 'heal' | 'dodge' | 'parry';
+  tone: 'dmg' | 'crit' | 'heal' | 'dodge' | 'parry' | 'combo' | 'phase';
 };
 
 /** 已装备物品提供的战力（未装备的行囊物品不加成） */
@@ -1229,8 +1642,10 @@ export function JianghuGame() {
   const [endingKey, setEndingKey] = useState<EndingKey | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [showLog, setShowLog] = useState(false);
-  const [panel, setPanel] = useState<null | 'martial' | 'town' | 'bag'>(null);
+  const [panel, setPanel] = useState<null | 'martial' | 'town' | 'bag' | 'quest' | 'sect' | 'meridian'>(null);
   const [cleared, setCleared] = useState<string[]>([]);
+  const [questProgress, setQuestProgress] = useState<QuestProgress>({});
+  const [activeQuestId, setActiveQuestId] = useState<string | null>(null);
   const [saveData, setSaveData] = useState<SaveData | null>(null);
   /** 读档时算出的离线挂机收益，供开局界面展示 */
   const [idlePreview, setIdlePreview] = useState<{ minutes: number; exp: number; silver: number } | null>(null);
@@ -1286,10 +1701,12 @@ export function JianghuGame() {
         setSaveData(data);
         // 离线挂机：按存档时间到现在折算，读档时发放
         const minutes = data.lastIdle ? (Date.now() - data.lastIdle) / 60000 : 0;
-        const gain = idleGain(minutes);
+        const gain = idleGain(minutes, data.hero);
         if (minutes >= 1 && (gain.exp > 0 || gain.silver > 0)) {
           setIdlePreview({ minutes: Math.floor(minutes), ...gain });
         }
+        if (data.questProgress) setQuestProgress(data.questProgress);
+        if (data.activeQuestId) setActiveQuestId(data.activeQuestId);
       }
     } catch {
       // 存档损坏或不可读时当作没有存档
@@ -1308,13 +1725,15 @@ export function JianghuGame() {
       nodeId,
       cleared,
       lastIdle: Date.now(),
+      questProgress,
+      activeQuestId,
     };
     try {
       window.localStorage.setItem(SAVE_KEY, JSON.stringify(data));
     } catch {
       // 存储不可用时静默跳过
     }
-  }, [phase, hero, nodeId, cleared, battle, playerName, avatarKey, originKey]);
+  }, [phase, hero, nodeId, cleared, battle, playerName, avatarKey, originKey, questProgress, activeQuestId]);
 
   // 走到结局即清档，避免读档回到结局前一幕
   useEffect(() => {
@@ -1351,7 +1770,10 @@ export function JianghuGame() {
 
   const pickSchool = (school: SchoolKey) => {
     if (!origin) return;
-    const h = makeHero(origin, school);
+    let h = makeHero(origin, school);
+    const pending = takePendingGifts();
+    const gifted = grantPendingGifts(h, pending);
+    h = gifted.hero;
     setHero(h);
     setNodeId(origin.node);
     setPhase('play');
@@ -1360,11 +1782,14 @@ export function JianghuGame() {
     setEndingKey(null);
     setPanel(null);
     setCleared([]);
+    setQuestProgress({});
+    setActiveQuestId(null);
     travelCount.current = 0;
-    logSeq.current = 2;
+    logSeq.current = 2 + gifted.lines.length;
     setLogs([
       { id: 1, text: `「${playerName}」以「${origin.name}」的身份踏入江湖，主修${SCHOOLS[school].name}。`, tone: 'event' },
       { id: 2, text: `${CHAPTER_LABELS[NODES[origin.node].chapter]} · ${NODES[origin.node].title}`, tone: 'info' },
+      ...gifted.lines.map((text, i) => ({ id: 3 + i, text, tone: 'win' as LogTone })),
     ]);
   };
 
@@ -1380,28 +1805,24 @@ export function JianghuGame() {
   /** 读档回到主界面：战斗与奇遇不恢复，节点重新抉择 */
   const continueSave = () => {
     if (!saveData) return;
-    const saved = saveData.hero;
-    const restored: Hero = {
-      ...saved,
-      items: Array.isArray(saved.items) ? saved.items : [],
-      equipped: {
-        weapon: saved.equipped?.weapon ?? null,
-        armor: saved.equipped?.armor ?? null,
-        accessory: saved.equipped?.accessory ?? null,
-      },
-    };
+    const restored = normalizeHero(saveData.hero);
     // 离线挂机结算：先补经验与银两，再进入江湖
     const gain = idlePreview;
     let resumed = restored;
     if (gain && (gain.exp > 0 || gain.silver > 0)) {
       resumed = grantExp({ ...restored, silver: restored.silver + gain.silver }, gain.exp);
     }
+    const pending = takePendingGifts();
+    const gifted = grantPendingGifts(resumed, pending);
+    resumed = gifted.hero;
     setPlayerName(saveData.playerName);
     setAvatarKey(saveData.avatarKey);
     setOriginKey(saveData.originKey || null);
     setHero(resumed);
     setNodeId(saveData.nodeId);
     setCleared(saveData.cleared ?? []);
+    setQuestProgress(saveData.questProgress ?? {});
+    setActiveQuestId(saveData.activeQuestId ?? null);
     setPhase('play');
     setEvent(null);
     setBattle(null);
@@ -1410,6 +1831,7 @@ export function JianghuGame() {
     travelCount.current = 0;
     logSeq.current = 1;
     setLogs([{ id: 1, text: `续接江湖录 · ${NODES[saveData.nodeId].title}`, tone: 'info' }]);
+    for (const line of gifted.lines) pushLog(line, 'win');
     if (gain && (gain.exp > 0 || gain.silver > 0)) {
       pushLog(
         `【挂机】离开的 ${gain.minutes} 分钟里你未曾停歇：得经验 ${gain.exp}、银两 ${gain.silver}${
@@ -1477,12 +1899,14 @@ export function JianghuGame() {
     }
     const hinted = effectHints(choice.effects).map((h) => h.text).join('，');
     pushLog(`▸ ${choice.label}${hinted ? `（${hinted}）` : ''}`, 'event');
-    const next = applyEffects(hero, choice.effects);
-    // 25% 概率触发江湖奇遇（结局节点除外）
+    // 行走江湖也会积下酒意：酒意满 10 点化为酒量（只在游戏内转化）
+    const next = gainWine(applyEffects(hero, choice.effects), 1);
+    // 25% 概率触发江湖奇遇（结局节点除外）；先落定本次抉择的属性变化，再进奇遇
     const target = NODES[choice.next];
     travelCount.current += 1;
     if (target && !target.ending && Math.random() < 0.25 && travelCount.current > 1) {
       const ev = EVENTS[Math.floor(Math.random() * EVENTS.length)];
+      setHero(next);
       setEvent({ ev, next: choice.next });
       return;
     }
@@ -1499,7 +1923,7 @@ export function JianghuGame() {
       startBattle({ ...choice.combat, win: event.next, lose: event.next });
       return;
     }
-    const next = applyEffects(hero, choice.effects);
+    const next = gainWine(applyEffects(hero, choice.effects), 1);
     setEvent(null);
     enter(event.next, next);
   };
@@ -1604,6 +2028,7 @@ export function JianghuGame() {
     const enemyDef = ENEMIES[combat.enemy] ?? ENEMIES['血手堂杀手'];
     const enemyMaxHp = Math.round(enemyDef.hpBase + combat.difficulty * enemyDef.hpPerDiff);
     battleSeq.current = 0;
+    const isBoss = BOSS_NAMES.has(enemyDef.name);
     setBattle({
       combat,
       enemyDef,
@@ -1616,8 +2041,20 @@ export function JianghuGame() {
       playerBleed: null,
       playerStun: 0,
       enemyStun: 0,
-      lines: [{ id: 0, text: `${enemyDef.name}拦住去路：${enemyDef.intro}`, tone: 'info' }],
+      combo: 0,
+      breath: 5 + Math.floor((hero.qi + meridianBonuses(hero.meridians ?? []).qi) / 20),
+      skillCd: {},
+      phase: 1,
+      enemyCharged: false,
+      lines: [
+        {
+          id: 0,
+          text: `${isBoss ? '【Boss】' : ''}${enemyDef.name}拦住去路：${enemyDef.intro}`,
+          tone: 'info',
+        },
+      ],
     });
+    // 开战消耗虎骨膏临时加成（保留到本场结束由 settle 清）
   };
 
   const pushBattleLine = (text: string, tone: LogTone) => {
@@ -1628,21 +2065,453 @@ export function JianghuGame() {
     });
   };
 
+  // ——— 门派：拜师 / 捐银 / 贡献换 S 级武学 ———
+
+  const joinSect = (s: Sect) => {
+    if (!hero) return;
+    const cur = sectOf(hero);
+    if (cur) {
+      pushLog(cur.key === s.key ? `你已是${s.name}门人。` : `你已身在${cur.name}，江湖规矩不许脚踏两条船。`, cur.key === s.key ? 'info' : 'lose');
+      return;
+    }
+    setHero({ ...hero, sectKey: s.key, contribution: hero.contribution ?? 0 });
+    pushLog(`【门派】你拜入${s.name}门下：${s.passive}`, 'win');
+  };
+
+  const donateSect = () => {
+    if (!hero) return;
+    const s = sectOf(hero);
+    if (!s) return;
+    if (hero.silver < SECT_CONTRIB_PRICE) {
+      pushLog(`【${s.name}】捐银需 ${SECT_CONTRIB_PRICE} 两，现有 ${hero.silver} 两。`, 'lose');
+      return;
+    }
+    const contribution = (hero.contribution ?? 0) + 5;
+    setHero({ ...hero, silver: hero.silver - SECT_CONTRIB_PRICE, contribution });
+    pushLog(`【${s.name}】捐银 ${SECT_CONTRIB_PRICE} 两，门派贡献 +5（现 ${contribution}）。`, 'win');
+  };
+
+  const claimSectManual = () => {
+    if (!hero) return;
+    const s = sectOf(hero);
+    if (!s) return;
+    const target = MANUALS.find((m) => m.school === hero.school && m.grade === 'S');
+    const cur = manualOf(hero);
+    if (!target) return;
+    if (cur && GRADE_INDEX[cur.grade] >= GRADE_INDEX.S) {
+      pushLog(`【${s.name}】你已习得 S 级秘籍。`, 'lose');
+      return;
+    }
+    const contribution = hero.contribution ?? 0;
+    if (contribution < SECT_MANUAL_COST) {
+      pushLog(`【${s.name}】贡献不足（需 ${SECT_MANUAL_COST}，现有 ${contribution}）。`, 'lose');
+      return;
+    }
+    setHero({ ...hero, contribution: contribution - SECT_MANUAL_COST, manualId: target.id });
+    pushLog(`【${s.name}】以 ${SECT_MANUAL_COST} 贡献换来《${target.name}》，S 级秘籍入手。`, 'win');
+  };
+
+  const claimSectInner = () => {
+    if (!hero) return;
+    const s = sectOf(hero);
+    if (!s) return;
+    const target = INNERS.find((i) => i.grade === 'S');
+    const cur = innerOf(hero);
+    if (!target) return;
+    if (cur && GRADE_INDEX[cur.grade] >= GRADE_INDEX.S) {
+      pushLog(`【${s.name}】你已修成 S 级内功。`, 'lose');
+      return;
+    }
+    const contribution = hero.contribution ?? 0;
+    if (contribution < SECT_INNER_COST) {
+      pushLog(`【${s.name}】贡献不足（需 ${SECT_INNER_COST}，现有 ${contribution}）。`, 'lose');
+      return;
+    }
+    setHero({ ...hero, contribution: contribution - SECT_INNER_COST, innerId: target.id });
+    pushLog(`【${s.name}】以 ${SECT_INNER_COST} 贡献换来《${target.name}》，内功大成。`, 'win');
+  };
+
+  // ——— 悬赏任务：除害 / 护送打一场，寻物直接跑腿；链式按步骤推进 ———
+
+  const grantQuestReward = (q: Quest, base: Hero) => {
+    let next = grantExp({ ...base, silver: base.silver + q.reward.silver }, q.reward.exp);
+    if (q.reward.contribution) next = { ...next, contribution: (next.contribution ?? 0) + q.reward.contribution };
+    if (q.reward.items?.length) next = applyEffects(next, { items: q.reward.items });
+    pushLog(
+      `【悬赏·${q.title}】办妥了：银两 +${q.reward.silver}${
+        q.reward.contribution ? `、贡献 +${q.reward.contribution}` : ''
+      }${q.reward.items?.length ? `、得「${q.reward.items.join('、')}」` : ''}`,
+      'win',
+    );
+    if (!cleared.includes(q.id)) setCleared((prev) => [...prev, q.id]);
+    setQuestProgress((prev) => ({ ...prev, [q.id]: { step: q.steps?.length ?? 0, done: true } }));
+    setActiveQuestId(q.nextQuestId ?? null);
+    return gainWine(next, 2);
+  };
+
+  const acceptQuest = (q: Quest) => {
+    if (!hero) return;
+    if (hero.level < q.minLevel) {
+      pushLog(`【悬赏·${q.title}】需 ${q.minLevel} 级才接得下。`, 'lose');
+      return;
+    }
+    if (cleared.includes(q.id) && !q.steps) {
+      pushLog(`【悬赏·${q.title}】此悬赏已了结。`, 'info');
+      return;
+    }
+
+    // 链式任务
+    if (q.steps?.length) {
+      const st = questProgress[q.id] ?? { step: 0 };
+      if (st.done) {
+        pushLog(`【悬赏·${q.title}】此链已完成。`, 'info');
+        return;
+      }
+      // 步骤已齐 → 领奖
+      if (st.step >= q.steps.length) {
+        // 交付类：消耗对应物品
+        if (q.id === 'q-fuzhou-chain') {
+          const purple = TREASURE_POOL.find((n) => hero.items.includes(n));
+          if (!purple) {
+            pushLog('【榕城三残图】交还需消耗一件紫装，行囊中暂无。', 'lose');
+            return;
+          }
+          setHero(grantQuestReward(q, applyEffects(hero, { removeItems: [purple] })));
+          return;
+        }
+        if (q.id === 'q-valley-herb') {
+          if (itemCount(hero, '草药') < 5) {
+            pushLog('【药王谷急采】草药不足 5 株。', 'lose');
+            return;
+          }
+          const rem = Array.from({ length: 5 }, () => '草药');
+          setHero(grantQuestReward(q, applyEffects(hero, { removeItems: rem })));
+          return;
+        }
+        setHero(grantQuestReward(q, hero));
+        return;
+      }
+      const step = q.steps[st.step];
+      setActiveQuestId(q.id);
+      if (step.action === 'fight' && q.enemy) {
+        setPanel(null);
+        startBattle({ enemy: q.enemy, difficulty: q.difficulty ?? 10, win: nodeId, lose: nodeId, quest: q.id });
+        return;
+      }
+      pushLog(`【悬赏·${q.title}】已接取。${questStepHint(q as never, questProgress)}`, 'event');
+      return;
+    }
+
+    if (q.kind === '寻物') {
+      if (Math.random() < 0.8) {
+        setHero(grantQuestReward(q, hero));
+      } else {
+        setHero(grantExp({ ...hero, silver: hero.silver + 8 }, 6));
+        pushLog(`【悬赏·${q.title}】白跑一趟，只讨回几两脚力钱。`, 'lose');
+      }
+      return;
+    }
+    if (!q.enemy) return;
+    setPanel(null);
+    startBattle({ enemy: q.enemy, difficulty: q.difficulty ?? 10, win: nodeId, lose: nodeId, quest: q.id });
+  };
+
+  const bumpQuest = (action: 'explore' | 'fight' | 'deliver' | 'craft' | 'talk') => {
+    const id = activeQuestId;
+    if (!id) return;
+    const q = QUESTS.find((x) => x.id === id);
+    if (!q?.steps) return;
+    const result = advanceQuestStep(questProgress, id, action, QUEST_CHAINS);
+    setQuestProgress(result.progress);
+    if (result.message) pushLog(result.message, 'event');
+  };
+
+  // ——— 场景探索 / 福州挖宝 / 炼丹 / 饮酒弹琴 ———
+
+  const exploreHerbs = () => {
+    if (!hero) return;
+    if (hero.silver < 5) {
+      pushLog('【探索】采药也要雇脚夫，银两只剩这么点。', 'lose');
+      return;
+    }
+    const skills = hero.lifeSkills ?? defaultLifeSkills();
+    const lv = skills.herb.level;
+    const herbs = 2 + Math.floor(lv / 3);
+    let next = applyEffects({ ...hero, silver: hero.silver - 5 }, { items: Array.from({ length: herbs }, () => '草药') });
+    next = { ...next, lifeSkills: gainLifeSkill(skills, 'herb', 8 + lv) };
+    const lucky = Math.random() < 0.2 + lv * 0.03;
+    if (lucky) next = applyEffects(next, { items: ['金创药'] });
+    pushLog(`【探索·采药 Lv.${lv}】采得草药 ${herbs} 株${lucky ? '，还顺手挖到一瓶金创药' : ''}。`, 'win');
+    setHero(gainWine(next, 1));
+    bumpQuest('explore');
+  };
+
+  const exploreTreasure = () => {
+    if (!hero) return;
+    if (hero.silver < 10) {
+      pushLog('【探索】打探消息也要花钱。', 'lose');
+      return;
+    }
+    const skills = hero.lifeSkills ?? defaultLifeSkills();
+    let next: Hero = {
+      ...hero,
+      silver: hero.silver - 10,
+      lifeSkills: gainLifeSkill(skills, 'mine', 6),
+    };
+    const roll = Math.random();
+    const mineLv = skills.mine.level;
+    if (roll < 0.4 + mineLv * 0.02) {
+      next = applyEffects(next, { items: ['藏宝图碎片'] });
+      pushLog('【探索·打探】酒肆里有人说漏了嘴，你拾得一片藏宝残图。', 'win');
+    } else if (roll < 0.75) {
+      const ores = 1 + (mineLv >= 5 ? 1 : 0);
+      next = applyEffects(next, { items: Array.from({ length: ores }, () => '矿石') });
+      pushLog(`【探索·挖矿 Lv.${mineLv}】收得矿石 ×${ores}。`, 'info');
+    } else {
+      next = grantExp({ ...next, silver: next.silver + 25 }, 8);
+      pushLog('【探索·打探】没打听到宝藏，倒接了个跑腿活，挣得 25 两。', 'info');
+    }
+    // 破庙场景探索推进「血书真伪」问老者
+    if (NODE_SCENE[nodeId] === 'temple') bumpQuest('talk');
+    setHero(gainWine(next, 1));
+    bumpQuest('explore');
+  };
+
+  const digTreasure = () => {
+    if (!hero) return;
+    if (itemCount(hero, '藏宝图碎片') < 3) {
+      pushLog('【福州·挖宝】残图不足三片，还拼不出完整藏宝图。', 'lose');
+      return;
+    }
+    if (hero.silver < 20) {
+      pushLog('【福州·挖宝】雇人挖土需 20 两。', 'lose');
+      return;
+    }
+    const prize = TREASURE_POOL[Math.floor(Math.random() * TREASURE_POOL.length)];
+    const owned = hero.items.includes(prize);
+    let next = applyEffects(hero, {
+      removeItems: ['藏宝图碎片', '藏宝图碎片', '藏宝图碎片'],
+      items: owned ? [] : [prize],
+    });
+    next = { ...next, silver: next.silver - 20 + (owned ? 120 : 0) };
+    pushLog(
+      owned
+        ? `【福州·挖宝】榕树根下掘得「${prize}」，你已有一件，转手卖了 120 两。`
+        : `【福州·挖宝】三片残图合一，榕树根下掘得「${prize}」！`,
+      'win',
+    );
+    setHero(gainWine(next, 1));
+    bumpQuest('explore');
+  };
+
+  const craftMed = (name: string) => {
+    if (!hero) return;
+    const recipe = RECIPES.find((r) => r.name === name);
+    if (!recipe) return;
+    if (itemCount(hero, '草药') < recipe.herbs) {
+      pushLog(`【炼丹】草药不足：炼${name}需 ${recipe.herbs} 株。`, 'lose');
+      return;
+    }
+    const skills = hero.lifeSkills ?? defaultLifeSkills();
+    const chance = craftSuccessChance(skills.alchemy.level, recipe.failBase ?? 0.1);
+    const consumed = Array.from({ length: recipe.herbs }, () => '草药');
+    let next = applyEffects(hero, { removeItems: consumed });
+    next = { ...next, lifeSkills: gainLifeSkill(skills, 'alchemy', 10) };
+    if (Math.random() > chance) {
+      pushLog(`【炼丹】丹炉炸烟，${recipe.herbs} 株草药化作一缕青烟（成功率 ${Math.round(chance * 100)}%）。`, 'lose');
+      setHero(next);
+      bumpQuest('craft');
+      return;
+    }
+    if (name === '剑意丸') {
+      next = { ...next, swordIntent: (next.swordIntent ?? 0) + 15 };
+      pushLog('【炼丹】剑意丸入腹，剑意 +15。', 'win');
+    } else if (name === '虎骨膏') {
+      next = applyEffects(next, { items: ['虎骨膏'] });
+      pushLog('【炼丹】炼成虎骨膏：下场战斗攻击 +8%。', 'win');
+    } else {
+      next = applyEffects(next, { items: [name] });
+      pushLog(`【炼丹】${recipe.herbs} 株草药炼成一剂${name}。`, 'win');
+    }
+    setHero(next);
+    bumpQuest('craft');
+  };
+
+  /** 锻造：消耗矿石+银两，强化全局词条 */
+  const forgeWeapon = () => {
+    if (!hero) return;
+    if (itemCount(hero, '矿石') < FORGE_COST.ore) {
+      pushLog(`【锻造】矿石不足（需 ${FORGE_COST.ore}）。`, 'lose');
+      return;
+    }
+    if (hero.silver < FORGE_COST.silver) {
+      pushLog(`【锻造】银两不足（需 ${FORGE_COST.silver}）。`, 'lose');
+      return;
+    }
+    const rem = Array.from({ length: FORGE_COST.ore }, () => '矿石');
+    const forge = { ...(hero.forge ?? defaultForge()) };
+    const roll = Math.random();
+    let tip = '';
+    if (roll < 0.35) {
+      forge.crit += 1;
+      tip = '暴击 +1%';
+    } else if (roll < 0.6) {
+      forge.lifesteal += 1;
+      tip = '吸血 +1%';
+    } else if (roll < 0.85) {
+      forge.speed += 1;
+      tip = '速度 +1';
+    } else {
+      forge.power += 2;
+      tip = '战力 +2';
+    }
+    const next = applyEffects(
+      { ...hero, silver: hero.silver - FORGE_COST.silver, forge },
+      { removeItems: rem },
+    );
+    pushLog(`【锻造】锤声落定：${tip}（累计 暴${forge.crit}/吸${forge.lifesteal}/速${forge.speed}/力${forge.power}）。`, 'win');
+    setHero(next);
+  };
+
+  /** 点亮经脉穴位 */
+  const openMeridian = (key: MeridianKey) => {
+    if (!hero) return;
+    const opened = hero.meridians ?? [];
+    const def = MERIDIANS.find((m) => m.key === key);
+    if (!def) return;
+    if (!canOpenMeridian(opened, key)) {
+      pushLog(`【经脉】「${def.name}」条件未足或已点亮。`, 'lose');
+      return;
+    }
+    if (hero.exp < def.costExp) {
+      pushLog(`【经脉】经验不足（需 ${def.costExp}，现有 ${hero.exp}）。`, 'lose');
+      return;
+    }
+    const nextOpened = [...opened, key];
+    const mb = meridianBonuses(nextOpened);
+    const prevMb = meridianBonuses(opened);
+    const maxHp = hero.maxHp + (mb.maxHp - prevMb.maxHp);
+    const qi = clamp(hero.qi + (mb.qi - prevMb.qi), 0, 100);
+    setHero({
+      ...hero,
+      exp: hero.exp - def.costExp,
+      meridians: nextOpened,
+      maxHp,
+      hp: Math.min(hero.hp + (mb.maxHp - prevMb.maxHp), maxHp),
+      qi,
+    });
+    pushLog(`【经脉】点亮「${def.name}」：${def.desc}`, 'win');
+  };
+
+  /** 残页升级秘籍 */
+  const upgradeManual = () => {
+    if (!hero?.manualId) {
+      pushLog('【武学】尚未学会秘籍。', 'lose');
+      return;
+    }
+    if (itemCount(hero, '残页') < 1) {
+      pushLog('【武学】缺少残页。', 'lose');
+      return;
+    }
+    const lv = hero.manualLevel ?? 1;
+    if (lv >= 5) {
+      pushLog('【武学】秘籍已至圆满。', 'info');
+      return;
+    }
+    const next = applyEffects({ ...hero, manualLevel: lv + 1 }, { removeItems: ['残页'] });
+    pushLog(`【武学】研读残页，秘籍升至 Lv.${lv + 1}（攻击倍率提升）。`, 'win');
+    setHero(next);
+  };
+
+  /** 战前吞虎骨膏 */
+  const useAtkPaste = () => {
+    if (!hero) return;
+    if (itemCount(hero, '虎骨膏') < 1) {
+      pushLog('【虎骨膏】行囊中没有。', 'lose');
+      return;
+    }
+    if ((hero.atkBuff ?? 0) > 0) {
+      pushLog('【虎骨膏】药效尚在，无需再服。', 'info');
+      return;
+    }
+    setHero(applyEffects({ ...hero, atkBuff: 0.08 }, { removeItems: ['虎骨膏'] }));
+    pushLog('【虎骨膏】下场战斗攻击 +8%。', 'win');
+  };
+
+  const drinkWine = () => {
+    if (!hero) return;
+    if (itemCount(hero, '烧刀子') < 1) {
+      pushLog('【饮酒】酒囊空了，去集市买壶烧刀子吧。', 'lose');
+      return;
+    }
+    const skills = hero.lifeSkills ?? defaultLifeSkills();
+    const next = gainWine(
+      {
+        ...applyEffects(hero, { removeItems: ['烧刀子'], hp: 2 }),
+        lifeSkills: gainLifeSkill(skills, 'qinwine', 5),
+      },
+      3,
+    );
+    pushLog(`【饮酒】一口烧刀子下肚，酒意 +3（现 ${next.wine ?? 0}/10，酒量 ${next.capacity ?? 0}）。`, 'info');
+    setHero(next);
+  };
+
+  const playQin = () => {
+    if (!hero) return;
+    if (!hero.items.includes('无名琴谱')) {
+      pushLog('【弹琴】手上没有琴谱，弹不出调子。', 'lose');
+      return;
+    }
+    if (hero.silver < 3) {
+      pushLog('【弹琴】香烛钱也不够。', 'lose');
+      return;
+    }
+    const skills = hero.lifeSkills ?? defaultLifeSkills();
+    let next: Hero = {
+      ...hero,
+      silver: hero.silver - 3,
+      lifeSkills: gainLifeSkill(skills, 'qinwine', 8),
+    };
+    const chance = 0.25 + skills.qinwine.level * 0.04;
+    if (Math.random() < chance) {
+      next = applyEffects(next, { wit: 1 });
+      pushLog(`【弹琴 Lv.${skills.qinwine.level}】一曲既罢，心神通透：悟性 +1。`, 'win');
+    } else {
+      pushLog('【弹琴】烟波吟散入夜色，并无实际效用。', 'info');
+    }
+    setHero(gainWine(next, 1));
+  };
+
   /**
-   * 一回合：按速度判定先后手（相差 10 内随机、快者略占优），
-   * 眩晕方跳过出手；拳法命中可震晕对手；装备词条接入会心/吸血/速度。
+   * 一回合：技能 / 连招 / 敌人 AI / Boss 阶段。
+   * action: attack=普攻, skill=流派招, finisher=终结, inner=内息护体, heal=吃药
    */
-  const actRound = (action: 'attack' | 'heal', medName?: string) => {
+  const actRound = (
+    action: 'attack' | 'heal' | 'skill' | 'finisher' | 'inner',
+    medName?: string,
+  ) => {
     if (!hero || !battle || battle.over) return;
     const { enemyDef } = battle;
+    const skills = schoolSkills(hero.school);
     let playerHp = battle.playerHp;
     let enemyHp = battle.enemyHp;
     let enemyBleed = battle.enemyBleed;
     let playerBleed = battle.playerBleed;
     let playerStun = battle.playerStun;
     let enemyStun = battle.enemyStun;
+    let combo = battle.combo ?? 0;
+    let breath = battle.breath ?? 5;
+    let skillCd = { ...(battle.skillCd ?? {}) };
+    let phase = battle.phase ?? 1;
+    let enemyCharged = battle.enemyCharged ?? false;
+    let shake = false;
     let nextHero = hero;
     let done = false;
+
+    // 冷却 tick
+    for (const k of Object.keys(skillCd) as SkillId[]) {
+      if ((skillCd[k] ?? 0) > 0) skillCd[k] = (skillCd[k] ?? 0) - 1;
+    }
 
     const fxFrom = (side: 'player' | 'enemy', r: StrikeResult): Omit<FxEvent, 'id'> =>
       r.kind === 'dodge'
@@ -1653,74 +2522,188 @@ export function JianghuGame() {
 
     const finish = (over: 'win' | 'lose') => {
       done = true;
-      setBattle((prev) => (prev ? { ...prev, enemyHp, playerHp, over } : prev));
+      setBattle((prev) => (prev ? { ...prev, enemyHp, playerHp, over, combo, breath, skillCd, phase, enemyCharged, shake } : prev));
     };
 
-    /** 玩家出手（被震晕时只能挨打） */
+    const applyHitEffects = (result: StrikeResult, statusMul: number, skillKind: SkillId) => {
+      const gear = gearStats(hero);
+      enemyHp = Math.max(0, enemyHp - result.dmg);
+      if (result.dmg > 0 && gear.lifesteal > 0) {
+        const steal = Math.max(1, Math.round((result.dmg * gear.lifesteal) / 100));
+        const healed = Math.min(hero.maxHp, playerHp + steal) - playerHp;
+        if (healed > 0) {
+          playerHp += healed;
+          addFx([{ side: 'player', text: `+${healed}`, tone: 'heal' }]);
+        }
+      }
+      const stunChance =
+        hero.school === 'quan' || skillKind === 'school'
+          ? (result.crit ? 35 : 18) * statusMul * (hero.school === 'quan' ? 1 : 0.5)
+          : 0;
+      if (result.kind === 'hit' && Math.random() * 100 < stunChance) {
+        enemyStun = Math.max(enemyStun, result.crit ? 2 : 1);
+        pushBattleLine(`${enemyDef.name}被震得气血翻涌，眩晕 ${enemyStun} 回合！`, 'win');
+      }
+      const bleedMul = skillKind === 'school' && hero.school === 'dao' ? 1.8 : statusMul;
+      const fresh = bleedFrom(hero.school, result, bleedMul);
+      if (fresh) {
+        enemyBleed = fresh;
+        pushBattleLine(`${enemyDef.name}血流不止（${fresh.rounds} 回合 ×${fresh.dmg}）。`, 'win');
+      }
+    };
+
     const playerTurn = () => {
       if (playerStun > 0) {
         playerStun -= 1;
         pushBattleLine(`你气血翻涌，被震得动弹不得（眩晕剩 ${playerStun} 回合）。`, 'lose');
         return;
       }
-      if (action === 'attack') {
-        // 玩家出手：等级 + 装备 + 秘籍 + 内功 加成；装备会心词条另计
-        const gear = gearStats(hero);
-        const power = heroPower(hero);
-        const result = strike(hero.school, hero.qi, hero.wit, power, enemyDef.wit, enemyDef.qi, gear.crit);
-        const line = strikeText('player', enemyDef.name, hero.school, result);
-        pushBattleLine(line.text, line.tone);
-        addFx([fxFrom('enemy', result)]);
-        enemyHp = Math.max(0, enemyHp - result.dmg);
-        if (enemyHp <= 0) {
-          pushBattleLine(`【胜】${enemyDef.name}倒下了。`, 'win');
-          finish('win');
-          return;
-        }
-        // 吸血词条：按造成伤害的比例回血
-        if (result.dmg > 0 && gear.lifesteal > 0) {
-          const steal = Math.max(1, Math.round((result.dmg * gear.lifesteal) / 100));
-          const healed = Math.min(hero.maxHp, playerHp + steal) - playerHp;
-          if (healed > 0) {
-            playerHp += healed;
-            addFx([{ side: 'player', text: `+${healed}`, tone: 'heal' }]);
-            pushBattleLine(`兵刃饮血，你回复 ${healed} 点气血。`, 'win');
-          }
-        }
-        // 拳法沉实，命中可震晕对手；会心时震得更久
-        if (hero.school === 'quan' && result.kind === 'hit' && Math.random() * 100 < (result.crit ? 35 : 18)) {
-          enemyStun = Math.max(enemyStun, result.crit ? 2 : 1);
-          pushBattleLine(`${enemyDef.name}被一拳震得气血翻涌，眩晕 ${enemyStun} 回合！`, 'win');
-        }
-        // 刀法命中割开皮肉：对方开始流血
-        const fresh = bleedFrom(hero.school, result);
-        if (fresh) {
-          enemyBleed = fresh;
-          pushBattleLine(`${enemyDef.name}皮肉翻卷，血流不止（剩 ${fresh.rounds} 回合，每回合 ${fresh.dmg} 点）。`, 'win');
-        }
-      } else {
-        // 服药：按指定药品消耗一瓶，回复气血，让出这一回合
+      if (action === 'heal') {
         const med = medName && hero.items.includes(medName) ? medName : null;
         if (!med) return;
         const amount = MEDS[med]?.heal ?? 0;
         nextHero = applyEffects(hero, { removeItems: [med] });
         playerHp = Math.min(hero.maxHp, playerHp + amount);
+        if (med === '清心丹') playerBleed = null;
         setHero(nextHero);
         addFx([{ side: 'player', text: `+${amount}`, tone: 'heal' }]);
-        pushBattleLine(`你服下${med}，气血回复 ${amount} 点（余 ${itemCount(nextHero, med)} 瓶）。`, 'win');
+        pushBattleLine(`你服下${med}，气血回复 ${amount} 点${med === '清心丹' ? '，血流渐止' : ''}。`, 'win');
+        return;
+      }
+      if (action === 'inner') {
+        const sk = skills.inner;
+        if (breath < sk.cost || (skillCd.inner ?? 0) > 0) {
+          pushBattleLine('内息不足或护体尚在冷却。', 'lose');
+          return;
+        }
+        breath -= sk.cost;
+        skillCd.inner = sk.cd;
+        const heal = 18 + Math.round(hero.qi * 0.2);
+        playerHp = Math.min(hero.maxHp, playerHp + heal);
+        addFx([{ side: 'player', text: `+${heal}`, tone: 'heal' }]);
+        pushBattleLine(`【内息护体】你闭气收势，回复 ${heal} 点气血。`, 'win');
+        return;
+      }
+
+      let skillId: SkillId = 'basic';
+      let powerMul = 1;
+      if (action === 'skill') {
+        const sk = skills.school;
+        if (breath < sk.cost || (skillCd.school ?? 0) > 0) {
+          pushBattleLine(`${sk.name}内息不足或冷却中。`, 'lose');
+          return;
+        }
+        breath -= sk.cost;
+        skillCd.school = sk.cd;
+        skillId = 'school';
+        powerMul = sk.powerMul;
+        pushBattleLine(`你使出【${sk.name}】！`, 'event');
+      } else if (action === 'finisher') {
+        if (combo < COMBO_MAX) {
+          pushBattleLine(`连招未满（${combo}/${COMBO_MAX}），无法释放终结技。`, 'lose');
+          return;
+        }
+        skillId = 'finisher';
+        powerMul = skills.finisher.powerMul;
+        combo = 0;
+        shake = true;
+        addFx([{ side: 'enemy', text: '终结!', tone: 'combo' }]);
+        pushBattleLine(`【连招终结】${skills.finisher.name}！`, 'win');
+      }
+
+      const gear = gearStats(hero);
+      const mb = meridianBonuses(hero.meridians ?? []);
+      const power = heroPower(hero) * powerMul;
+      const critBonus = gear.crit + (sectOf(hero)?.crit ?? 0) + swordIntentBonus(hero) + mb.crit;
+      const hits =
+        skillId === 'school' && hero.school === 'jian'
+          ? 2
+          : 1 + (action === 'attack' && Math.random() * 100 < multiHitChance(hero) ? 1 : 0);
+      const statusMul = hits > 1 ? 1.5 : 1;
+      let landed = false;
+      for (let h = 0; h < hits; h += 1) {
+        if (h > 0) pushBattleLine('招式连环，第二击又至！', 'info');
+        const result = strike(
+          hero.school,
+          hero.qi + mb.qi,
+          hero.wit,
+          power * (h > 0 ? 0.55 : 1),
+          enemyDef.wit,
+          enemyDef.qi,
+          critBonus,
+        );
+        // 经脉闪避/招架修正体现于防守方时在敌方回合；攻击方此处只打伤害
+        const line = strikeText('player', enemyDef.name, hero.school, result);
+        pushBattleLine(line.text, line.tone);
+        addFx([fxFrom('enemy', result)]);
+        if (result.dmg > 0) landed = true;
+        applyHitEffects(result, statusMul, skillId);
+        if (enemyHp <= 0) {
+          pushBattleLine(`【胜】${enemyDef.name}倒下了。`, 'win');
+          finish('win');
+          return;
+        }
+      }
+      if (landed) {
+        const gain = skillId === 'school' ? 2 : skillId === 'finisher' ? 0 : 1;
+        combo = Math.min(COMBO_MAX, combo + gain);
+        if (combo >= COMBO_MAX) addFx([{ side: 'player', text: '连招满', tone: 'combo' }]);
+      }
+      // Boss 阶段检测
+      const ratio = enemyHp / battle.enemyMaxHp;
+      const nextPhase = bossPhase(ratio);
+      if (nextPhase > phase) {
+        phase = nextPhase;
+        shake = true;
+        const label = bossPhaseLabel(enemyDef.name, phase);
+        if (label) {
+          pushBattleLine(label, 'event');
+          addFx([{ side: 'enemy', text: `阶段${phase}`, tone: 'phase' }]);
+        }
       }
     };
 
-    /** 敌方出手（被震晕时跳过一次） */
     const enemyTurn = () => {
       if (enemyStun > 0) {
         enemyStun -= 1;
         pushBattleLine(`${enemyDef.name}头晕目眩，这一招落在空处（眩晕剩 ${enemyStun} 回合）。`, 'win');
         return;
       }
-      // 敌方反击：伤害 = 敌流派基础 × 敌人 power；已装备护甲减伤
-      const armor = hero.equipped.armor ? 0.82 : 1;
-      const back = strike(enemyDef.school, enemyDef.qi, enemyDef.wit, enemyDef.power * armor, hero.wit, hero.qi);
+      const isBoss = BOSS_NAMES.has(enemyDef.name);
+      const hpRatio = enemyHp / battle.enemyMaxHp;
+      const ai = pickEnemyAction(hpRatio, isBoss, enemyCharged);
+      const armor = (hero.equipped.armor ? 0.82 : 1) * (sectOf(hero)?.armor ?? 1);
+      const phaseMul = phasePowerMul(phase);
+
+      if (ai === 'heal') {
+        const heal = Math.round(battle.enemyMaxHp * (isBoss ? 0.12 : 0.08));
+        enemyHp = Math.min(battle.enemyMaxHp, enemyHp + heal);
+        addFx([{ side: 'enemy', text: `+${heal}`, tone: 'heal' }]);
+        pushBattleLine(`${enemyDef.name}运功疗伤，回复 ${heal} 点气血。`, 'lose');
+        enemyCharged = false;
+        return;
+      }
+      if (ai === 'charge') {
+        enemyCharged = true;
+        pushBattleLine(`${enemyDef.name}沉肩蓄势，下一招必是杀招！`, 'event');
+        return;
+      }
+
+      const rageMul = ai === 'rage' ? 1.6 : 1;
+      if (ai === 'rage') {
+        pushBattleLine(`${enemyDef.name}蓄力尽出！`, 'lose');
+        shake = true;
+        enemyCharged = false;
+      }
+      const mb = meridianBonuses(hero.meridians ?? []);
+      const back = strike(
+        enemyDef.school,
+        enemyDef.qi,
+        enemyDef.wit,
+        enemyDef.power * armor * phaseMul * rageMul,
+        hero.wit + mb.dodge,
+        hero.qi + mb.parry,
+      );
       const backLine = strikeText('enemy', enemyDef.name, enemyDef.school, back);
       pushBattleLine(backLine.text, backLine.tone);
       addFx([fxFrom('player', back)]);
@@ -1730,25 +2713,33 @@ export function JianghuGame() {
         finish('lose');
         return;
       }
-      // 敌方拳法同样能把你震晕
+      const reflect = innerReflect(hero);
+      if (back.dmg > 0 && reflect > 0) {
+        const rebound = Math.max(1, Math.round(back.dmg * reflect));
+        enemyHp = Math.max(0, enemyHp - rebound);
+        pushBattleLine(`你内息反震，${enemyDef.name}反受 ${rebound} 点伤。`, 'win');
+        if (enemyHp <= 0) {
+          pushBattleLine(`【胜】${enemyDef.name}被自己的力道震倒。`, 'win');
+          finish('win');
+          return;
+        }
+      }
       if (enemyDef.school === 'quan' && back.kind === 'hit' && Math.random() * 100 < (back.crit ? 30 : 15)) {
         playerStun = Math.max(playerStun, back.crit ? 2 : 1);
         pushBattleLine(`你被${enemyDef.name}一拳震得眼前发黑，眩晕 ${playerStun} 回合！`, 'lose');
       }
-      // 敌方刀法也可能让你流血
       const freshOnPlayer = bleedFrom(enemyDef.school, back);
       if (freshOnPlayer) {
         playerBleed = freshOnPlayer;
-        pushBattleLine(`你的手臂被划开一道口子，血流不止（剩 ${freshOnPlayer.rounds} 回合，每回合 ${freshOnPlayer.dmg} 点）。`, 'lose');
+        pushBattleLine(`你血流不止（${freshOnPlayer.rounds} 回合 ×${freshOnPlayer.dmg}）。`, 'lose');
       }
     };
 
-    // ——— 先手判定 ———
-    const pSpeed = heroSpeed(hero);
-    const eSpeed = enemySpeed(enemyDef);
+    const pSpeed = heroSpeed(hero) + meridianBonuses(hero.meridians ?? []).dodge;
+    const eSpeed = enemySpeed(enemyDef) + (phase - 1) * 2;
     const playerFirst = rollFirst(pSpeed, eSpeed);
     pushBattleLine(
-      `第${battle.round}回合 · ${playerFirst ? '你' : enemyDef.name}抢得先机（速度 ${pSpeed} : ${eSpeed}）。`,
+      `第${battle.round}回合 · ${playerFirst ? '你' : enemyDef.name}抢得先机（速度 ${pSpeed} : ${eSpeed}）· 连招 ${combo}/${COMBO_MAX} · 内息 ${breath}`,
       'info',
     );
     if (playerFirst) {
@@ -1760,13 +2751,12 @@ export function JianghuGame() {
     }
     if (done) return;
 
-    // 回合末结算双方流血
     if (enemyBleed) {
       const tick = enemyBleed;
       enemyHp = Math.max(0, enemyHp - tick.dmg);
       addFx([{ side: 'enemy', text: `🩸-${tick.dmg}`, tone: 'dmg' }]);
       enemyBleed = tick.rounds > 1 ? { ...tick, rounds: tick.rounds - 1 } : null;
-      pushBattleLine(`${enemyDef.name}血流不止，再失 ${tick.dmg} 点气血${enemyBleed ? `（剩 ${enemyBleed.rounds} 回合）` : '（血流渐止）'}。`, 'win');
+      pushBattleLine(`${enemyDef.name}再失 ${tick.dmg} 点气血。`, 'win');
       if (enemyHp <= 0) {
         pushBattleLine(`【胜】${enemyDef.name}血尽倒地。`, 'win');
         finish('win');
@@ -1778,7 +2768,7 @@ export function JianghuGame() {
       playerHp = Math.max(0, playerHp - tick.dmg);
       addFx([{ side: 'player', text: `🩸-${tick.dmg}`, tone: 'dmg' }]);
       playerBleed = tick.rounds > 1 ? { ...tick, rounds: tick.rounds - 1 } : null;
-      pushBattleLine(`你的伤口仍在流血，又失 ${tick.dmg} 点气血${playerBleed ? `（剩 ${playerBleed.rounds} 回合）` : '（血已止住）'}。`, 'lose');
+      pushBattleLine(`你再失 ${tick.dmg} 点气血。`, 'lose');
       if (playerHp <= 0) {
         pushBattleLine('【败】失血过多，你眼前一黑。', 'lose');
         finish('lose');
@@ -1786,19 +2776,38 @@ export function JianghuGame() {
       }
     }
 
-    // 内功调息：每回合自行回气
-    const regen = innerOf(hero)?.regen ?? 0;
+    const regen = (innerOf(hero)?.regen ?? 0) + (sectOf(hero)?.regen ?? 0);
     if (regen > 0) {
       const healed = Math.min(hero.maxHp, playerHp + regen) - playerHp;
       if (healed > 0) {
         playerHp += healed;
         addFx([{ side: 'player', text: `+${healed}`, tone: 'heal' }]);
-        pushBattleLine(`你内息流转，缓过 ${healed} 点气血。`, 'win');
       }
     }
+    // 每回合回复 1 点内息
+    breath = Math.min(12, breath + 1);
+
     setBattle((prev) =>
-      prev ? { ...prev, enemyHp, playerHp, enemyBleed, playerBleed, playerStun, enemyStun, round: prev.round + 1 } : prev,
+      prev
+        ? {
+            ...prev,
+            enemyHp,
+            playerHp,
+            enemyBleed,
+            playerBleed,
+            playerStun,
+            enemyStun,
+            combo,
+            breath,
+            skillCd,
+            phase,
+            enemyCharged,
+            shake,
+            round: prev.round + 1,
+          }
+        : prev,
     );
+    if (shake) setTimeout(() => setBattle((p) => (p ? { ...p, shake: false } : p)), 320);
   };
 
   /** 战斗结算：胜利回满气血 + 得经验（城镇战另发秘籍与内功）；失败按 loseHp 惩罚进 lose 节点 */
@@ -1809,6 +2818,50 @@ export function JianghuGame() {
       const gain = Math.round(8 + combat.difficulty * 2.2);
       let next = grantExp({ ...hero, hp: hero.maxHp }, gain);
       pushLog(`【战斗胜利】击败了${combat.enemy}，战后调息，气血已复原。`, 'win');
+
+      // 剑意：胜场累积，对手越强给得越多
+      const intentBefore = swordIntentBonus(hero);
+      next = { ...next, swordIntent: (next.swordIntent ?? 0) + Math.round(4 + combat.difficulty / 3) };
+      if (swordIntentBonus(next) > intentBefore) {
+        pushLog(`【剑意】剑意凝实，会心 +${swordIntentBonus(next)}%。`, 'win');
+      }
+
+      // 胜后清临时虎骨膏，偶得残页
+      next = { ...next, atkBuff: 0 };
+      if (Math.random() < 0.22) {
+        next = applyEffects(next, { items: ['残页'] });
+        pushLog('【战利】捡到一页武学残页。', 'event');
+      }
+
+      // 悬赏任务战：链式先推进步骤；普通悬赏发奖
+      const quest = combat.quest ? QUESTS.find((q) => q.id === combat.quest) ?? null : null;
+      if (quest) {
+        if (quest.steps?.length) {
+          bumpQuest('fight');
+          setBattle(null);
+          setHero(gainWine(next, 2));
+          pushLog(`【悬赏·${quest.title}】战斗环节已过。`, 'win');
+          return;
+        }
+        if (quest.reward.exp > 0) next = grantExp(next, quest.reward.exp);
+        next = { ...next, silver: next.silver + quest.reward.silver };
+        if (quest.reward.contribution) {
+          next = { ...next, contribution: (next.contribution ?? 0) + quest.reward.contribution };
+        }
+        if (quest.reward.items && quest.reward.items.length > 0) {
+          next = applyEffects(next, { items: quest.reward.items });
+        }
+        const extra = [
+          `银两 ${quest.reward.silver}`,
+          quest.reward.contribution ? `门派贡献 ${quest.reward.contribution}` : '',
+          quest.reward.items?.length ? `得「${quest.reward.items.join('、')}」` : '',
+        ].filter(Boolean).join('、');
+        pushLog(`【悬赏·${quest.title}】事成：${extra}`, 'win');
+        if (!cleared.includes(quest.id)) setCleared((prev) => [...prev, quest.id]);
+        setBattle(null);
+        setHero(gainWine(next, 2));
+        return;
+      }
 
       const town = combat.town ? TOWNS.find((t) => t.key === combat.town) : null;
       if (town) {
@@ -1840,11 +2893,11 @@ export function JianghuGame() {
       setBattle(null);
       enter(combat.win, next);
     } else {
-      const survived = { ...hero, hp: Math.max(1, Math.round(hero.maxHp * 0.15)) };
+      const survived = { ...hero, hp: Math.max(1, Math.round(hero.maxHp * 0.15)), atkBuff: 0 };
       pushLog(`【战斗失利】败给${combat.enemy}，侥幸捡回一条命。`, 'lose');
       setBattle(null);
-      if (combat.town) {
-        // 城镇挑战失败：退守客栈养伤，剧情不推进
+      if (combat.town || combat.quest) {
+        // 城镇挑战 / 悬赏任务失败：退守客栈养伤，剧情不推进
         setHero(survived);
         return;
       }
@@ -1867,7 +2920,9 @@ export function JianghuGame() {
 
   const node = NODES[nodeId];
   const selectedOrigin = originKey ? ORIGINS.find((o) => o.key === originKey) ?? null : null;
-  const sceneKey = NODE_SCENE[nodeId] ?? (node?.chapter === 1 ? 'luoyang-snow' : node?.chapter === 2 ? 'jiangnan' : 'peak');
+  const sceneKey =
+    NODE_SCENE[nodeId] ??
+    (node?.chapter === 1 ? 'luoyang-snow' : node?.chapter === 2 ? 'jiangnan' : node?.chapter === 4 ? 'huashan' : 'peak');
   const scene = SCENES[sceneKey];
   const playerFx = battleFx.filter((f) => f.side === 'player');
   const enemyFx = battleFx.filter((f) => f.side === 'enemy');
@@ -1879,7 +2934,10 @@ export function JianghuGame() {
     heal: 'text-success',
     dodge: 'text-faint',
     parry: 'text-warning',
+    combo: 'text-accent',
+    phase: 'text-warning',
   };
+  const battleSkills = hero ? schoolSkills(hero.school) : null;
 
   return (
     <div className="w-full max-w-3xl mx-auto">
@@ -1904,6 +2962,14 @@ export function JianghuGame() {
           100% { opacity: 1; transform: translateY(0); }
         }
         .jh-fade { animation: jh-fade-up 0.32s ease-out; }
+        @keyframes jh-shake {
+          0%, 100% { transform: translateX(0); }
+          20% { transform: translateX(-4px); }
+          40% { transform: translateX(4px); }
+          60% { transform: translateX(-3px); }
+          80% { transform: translateX(3px); }
+        }
+        .jh-shake { animation: jh-shake 0.32s ease-out; }
       `}</style>
 
       {/* 章节过场卡 */}
@@ -2127,6 +3193,15 @@ export function JianghuGame() {
                 <span>📜 {manualOf(hero) ? `${manualOf(hero)?.grade}《${manualOf(hero)?.name}》` : '秘籍 · 未学'}</span>
                 <span>☯ {innerOf(hero) ? `${innerOf(hero)?.grade}《${innerOf(hero)?.name}》` : '内功 · 未修'}</span>
               </div>
+              <div className="mt-1 flex flex-wrap gap-x-3 text-[10px] text-faint">
+                <span>
+                  🏯 {sectOf(hero)?.name ?? '未入门派'}
+                  {sectOf(hero) ? ` · 贡献 ${hero.contribution ?? 0}` : ''}
+                </span>
+                <span>🗡️ 剑意 {hero.swordIntent ?? 0}（会心 +{swordIntentBonus(hero)}%）</span>
+                <span>🍶 酒量 {hero.capacity ?? 0} · 酒意 {hero.wine ?? 0}/10</span>
+                <span>🗺️ 残图 {itemCount(hero, '藏宝图碎片')}/3</span>
+              </div>
             </div>
             <div className="flex shrink-0 flex-col gap-1">
               <button type="button" onClick={() => setShowLog((v) => !v)} className="rounded-md border border-line px-2 py-1 text-[10px] text-muted hover:text-content">
@@ -2140,6 +3215,15 @@ export function JianghuGame() {
               </button>
               <button type="button" onClick={() => setPanel('bag')} className="rounded-md border border-line px-2 py-1 text-[10px] text-muted hover:text-content">
                 行囊
+              </button>
+              <button type="button" onClick={() => setPanel('meridian')} className="rounded-md border border-line px-2 py-1 text-[10px] text-muted hover:text-content">
+                经脉
+              </button>
+              <button type="button" onClick={() => setPanel('quest')} className="rounded-md border border-line px-2 py-1 text-[10px] text-muted hover:text-content">
+                悬赏
+              </button>
+              <button type="button" onClick={() => setPanel('sect')} className="rounded-md border border-line px-2 py-1 text-[10px] text-muted hover:text-content">
+                门派
               </button>
             </div>
           </div>
@@ -2409,6 +3493,257 @@ export function JianghuGame() {
         </div>
       )}
 
+      {/* ════ 悬赏面板：除害 / 寻物 / 护送 + 场景探索 ════ */}
+      {panel === 'meridian' && hero && (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/55 p-3 sm:items-center" onClick={() => setPanel(null)}>
+          <div
+            className="max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-2xl border border-line bg-surface p-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <div className="text-sm font-bold text-content">经脉 · 穴位</div>
+              <button type="button" onClick={() => setPanel(null)} className="text-[11px] text-muted">
+                关闭
+              </button>
+            </div>
+            <p className="mb-3 text-[10px] leading-relaxed text-faint">
+              耗经验点亮穴位。已点 {(hero.meridians ?? []).length}/{MERIDIANS.length} · 经验 {hero.exp}
+            </p>
+            <div className="space-y-2">
+              {MERIDIANS.map((m) => {
+                const opened = (hero.meridians ?? []).includes(m.key);
+                const ok = canOpenMeridian(hero.meridians ?? [], m.key);
+                return (
+                  <div key={m.key} className="flex items-start gap-2 rounded-lg border border-line p-2.5">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[12px] font-semibold text-content">
+                        {opened ? '✓ ' : ''}
+                        {m.name}
+                      </div>
+                      <p className="text-[10px] text-faint">{m.desc}</p>
+                      <p className="mt-0.5 text-[10px] text-muted">耗经验 {m.costExp}</p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={opened || !ok || hero.exp < m.costExp}
+                      onClick={() => openMeridian(m.key)}
+                      className="shrink-0 rounded border border-line px-2 py-1 text-[10px] text-muted hover:text-content disabled:opacity-40"
+                    >
+                      {opened ? '已通' : ok ? '点亮' : '未解锁'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-4 text-[11px] font-semibold text-content">生活技能</div>
+            <div className="mt-1.5 grid grid-cols-2 gap-2">
+              {(Object.keys(LIFE_SKILL_LABEL) as (keyof typeof LIFE_SKILL_LABEL)[]).map((k) => {
+                const s = (hero.lifeSkills ?? defaultLifeSkills())[k];
+                return (
+                  <div key={k} className="rounded-lg border border-line px-2 py-1.5 text-[10px]">
+                    <div className="font-semibold text-content">
+                      {LIFE_SKILL_LABEL[k]} Lv.{s.level}
+                    </div>
+                    <div className="text-faint">
+                      熟练 {s.exp}/{20 + (s.level - 1) * 15}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {panel === 'quest' && hero && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm" onClick={() => setPanel(null)}>
+          <div
+            className="max-h-[86vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-line bg-surface p-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-bold text-content">悬赏 · 江湖任务</div>
+              <button type="button" onClick={() => setPanel(null)} className="text-xs text-faint hover:text-content">关闭</button>
+            </div>
+            <p className="mt-1 text-[10px] leading-relaxed text-faint">
+              除害 / 护送动刀兵；寻物跑腿；链式任务多步推进。带「余烬」标签的与第四章挂钩。
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+              <span className="chip border border-line text-muted">Lv.{hero.level}</span>
+              <span className="chip border border-line text-muted">贡献 {hero.contribution ?? 0}</span>
+              <span className="chip border border-line text-muted">残图 {itemCount(hero, '藏宝图碎片')}/3</span>
+              <span className="chip border border-line text-muted">草药 {itemCount(hero, '草药')}</span>
+              {activeQuestId && (
+                <span className="chip border border-accent/40 text-accent">进行中 · {activeQuestId}</span>
+              )}
+            </div>
+
+            <div className="mt-3 space-y-2">
+              {QUESTS.map((q) => {
+                const locked = hero.level < q.minLevel;
+                const done = cleared.includes(q.id) || questProgress[q.id]?.done;
+                const info = SCENES[q.scene] ?? SCENES.huashan;
+                const hint = q.steps ? questStepHint(q as never, questProgress) : q.desc;
+                return (
+                  <div
+                    key={q.id}
+                    className={`rounded-lg border p-2.5 ${
+                      locked ? 'border-line/50 opacity-55' : done ? 'border-success/40 bg-success/5' : 'border-line'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={info.url}
+                        alt={info.label}
+                        loading="lazy"
+                        className="h-12 w-16 shrink-0 rounded border border-line object-cover"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5 text-[12px] font-semibold text-content">
+                          {q.title}
+                          <span className="rounded border border-accent/40 px-1 text-[9px] font-normal text-accent">{q.kind}</span>
+                          {q.tag && (
+                            <span className="rounded border border-warning/40 px-1 text-[9px] font-normal text-warning">{q.tag}</span>
+                          )}
+                          {done && <span className="text-[9px] font-normal text-success">已完成</span>}
+                        </div>
+                        <div className="text-[10px] text-faint">{info.label} · 需 Lv.{q.minLevel}</div>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={locked || !!done}
+                        onClick={() => acceptQuest(q)}
+                        className="shrink-0 rounded border border-line px-2 py-1 text-[10px] text-muted hover:text-content disabled:opacity-40"
+                      >
+                        {locked ? '等级不足' : done ? '已了结' : q.kind === '寻物' ? '跑一趟' : q.kind === '链式' ? '推进' : '接取'}
+                      </button>
+                    </div>
+                    <p className="mt-1 text-[10px] leading-snug text-faint">{hint}</p>
+                    <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[9px]">
+                      <span className="text-accent">经验 +{q.reward.exp}</span>
+                      <span className="text-success">银两 +{q.reward.silver}</span>
+                      {q.reward.contribution ? <span className="text-warning">贡献 +{q.reward.contribution}</span> : null}
+                      {q.reward.items?.map((it) => <span key={it} className="text-muted">「{it}」</span>)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-4 text-[11px] font-semibold text-content">场景探索 · 福州挖宝</div>
+            <div className="mt-1.5 grid grid-cols-3 gap-2">
+              <button type="button" onClick={exploreHerbs} className="rounded-lg border border-line p-2 text-left text-[10px] text-muted hover:text-content">
+                <div className="text-[11px] font-semibold text-content">采药</div>
+                <div className="text-faint">5 两 · 得草药</div>
+              </button>
+              <button type="button" onClick={exploreTreasure} className="rounded-lg border border-line p-2 text-left text-[10px] text-muted hover:text-content">
+                <div className="text-[11px] font-semibold text-content">打探</div>
+                <div className="text-faint">10 两 · 找残图</div>
+              </button>
+              <button type="button" onClick={digTreasure} className="rounded-lg border border-line p-2 text-left text-[10px] text-muted hover:text-content">
+                <div className="text-[11px] font-semibold text-content">挖宝</div>
+                <div className="text-faint">3 残图 · 出紫装</div>
+              </button>
+            </div>
+            <p className="mt-2 text-[10px] leading-relaxed text-faint">
+              ※ 藏宝图碎片集齐三片，可在福州榕树根下挖出紫装；原作中支离、青冥剑、摘音剑等吸血兵刃皆在此列 ※
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ════ 门派面板：六派拜师 / 捐银 / 贡献换 S 级武学 ════ */}
+      {panel === 'sect' && hero && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm" onClick={() => setPanel(null)}>
+          <div
+            className="max-h-[86vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-line bg-surface p-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-bold text-content">门派 · 六派</div>
+              <button type="button" onClick={() => setPanel(null)} className="text-xs text-faint hover:text-content">关闭</button>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+              <span className="chip border border-line text-muted">本门 {sectOf(hero)?.name ?? '无'}</span>
+              <span className="chip border border-line text-muted">贡献 {hero.contribution ?? 0}</span>
+              <span className="chip border border-line text-muted">银两 {hero.silver}</span>
+            </div>
+
+            {sectOf(hero) && (
+              <div className="mt-2 rounded-lg border border-accent/40 bg-accent/5 p-2.5">
+                <div className="text-[12px] font-semibold text-content">{sectOf(hero)?.name} · 门人</div>
+                <p className="text-[10px] text-accent">{sectOf(hero)?.passive}</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={donateSect}
+                    className="rounded border border-line px-2 py-1 text-[10px] text-muted hover:text-content"
+                  >
+                    捐银 {SECT_CONTRIB_PRICE} 两（贡献 +5）
+                  </button>
+                  <button
+                    type="button"
+                    disabled={(hero.contribution ?? 0) < SECT_MANUAL_COST}
+                    onClick={claimSectManual}
+                    className="rounded border border-accent/50 px-2 py-1 text-[10px] text-accent hover:bg-accent/10 disabled:opacity-40"
+                  >
+                    换 S 秘籍（{SECT_MANUAL_COST} 贡献）
+                  </button>
+                  <button
+                    type="button"
+                    disabled={(hero.contribution ?? 0) < SECT_INNER_COST}
+                    onClick={claimSectInner}
+                    className="rounded border border-accent/50 px-2 py-1 text-[10px] text-accent hover:bg-accent/10 disabled:opacity-40"
+                  >
+                    换 S 内功（{SECT_INNER_COST} 贡献）
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="mt-3 space-y-2">
+              {SECTS.map((s) => {
+                const joined = hero.sectKey === s.key;
+                const info = SCENES[s.scene];
+                return (
+                  <div key={s.key} className={`rounded-lg border p-2.5 ${joined ? 'border-success/40 bg-success/5' : 'border-line'}`}>
+                    <div className="flex items-start gap-2">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={info.url}
+                        alt={info.label}
+                        loading="lazy"
+                        className="h-12 w-16 shrink-0 rounded border border-line object-cover"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[12px] font-semibold text-content">
+                          {s.name}
+                          {joined && <span className="ml-1 text-[9px] font-normal text-success">本门</span>}
+                        </div>
+                        <div className="text-[10px] text-accent">{s.passive}</div>
+                        <p className="text-[10px] text-faint">{s.motto}</p>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={!!hero.sectKey}
+                        onClick={() => joinSect(s)}
+                        className="shrink-0 rounded border border-line px-2 py-1 text-[10px] text-muted hover:text-content disabled:opacity-40"
+                      >
+                        {joined ? '已入' : hero.sectKey ? '另有门派' : '拜入'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-3 text-[10px] leading-relaxed text-faint">
+              ※ 门派被动常驻生效；贡献靠捐银与悬赏积累，可换本门 S 级秘籍与内功。华山重会心，少林重伤害，武当卸力，太乙轻功，峨眉回血，嵩山刚猛 ※
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ════ 行囊面板：装备槽 + 物品 + 集市 ════ */}
       {panel === 'bag' && hero && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm" onClick={() => setPanel(null)}>
@@ -2473,7 +3808,7 @@ export function JianghuGame() {
                         {equipped && <span className="ml-1 text-[10px] font-normal text-success">已装备</span>}
                       </div>
                       <p className="text-[10px] leading-snug text-faint">
-                        {gear ? `${gear.desc}${gearAffix(gear) ? `（${gearAffix(gear)}）` : ''}` : med?.desc ?? '随身之物，未派上用场。'}
+                        {gear ? `${gear.desc}${gearAffix(gear) ? `（${gearAffix(gear)}）` : ''}` : med?.desc ?? ITEM_DESC[name] ?? '随身之物，未派上用场。'}
                       </p>
                     </div>
                     {gear && !equipped && (
@@ -2517,27 +3852,120 @@ export function JianghuGame() {
               })}
             </div>
 
+            <div className="mt-3 flex items-center justify-between text-[11px] font-semibold text-content">
+              <span>炼丹 · 草药 {itemCount(hero, '草药')} 株</span>
+              <span className="text-[10px] font-normal text-faint">
+                丹道 Lv.{(hero.lifeSkills ?? defaultLifeSkills()).alchemy.level}
+              </span>
+            </div>
+            <div className="mt-1.5 grid grid-cols-3 gap-2">
+              {RECIPES.map((r) => {
+                const can = itemCount(hero, '草药') >= r.herbs;
+                return (
+                  <button
+                    key={r.name}
+                    type="button"
+                    disabled={!can}
+                    onClick={() => craftMed(r.name)}
+                    className="rounded-lg border border-line p-2 text-left text-[10px] text-muted hover:text-content disabled:opacity-40"
+                  >
+                    <div className="text-[11px] font-semibold text-content">{r.name}</div>
+                    <div className="text-faint">草药 ×{r.herbs}</div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-3 text-[11px] font-semibold text-content">锻造 · 矿石 {itemCount(hero, '矿石')}</div>
+            <button
+              type="button"
+              onClick={forgeWeapon}
+              className="mt-1.5 w-full rounded-lg border border-line p-2 text-left text-[10px] text-muted hover:text-content"
+            >
+              <div className="text-[11px] font-semibold text-content">
+                锤炼兵器（矿石 ×{FORGE_COST.ore} · 银两 {FORGE_COST.silver}）
+              </div>
+              <div className="text-faint">
+                累计 暴{(hero.forge ?? defaultForge()).crit}/吸{(hero.forge ?? defaultForge()).lifesteal}/速
+                {(hero.forge ?? defaultForge()).speed}/力{(hero.forge ?? defaultForge()).power}
+              </div>
+            </button>
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={upgradeManual}
+                className="flex-1 rounded-lg border border-line p-2 text-left text-[10px] text-muted hover:text-content"
+              >
+                <div className="text-[11px] font-semibold text-content">研读残页 ×{itemCount(hero, '残页')}</div>
+                <div className="text-faint">秘籍 Lv.{hero.manualLevel ?? 1}/5</div>
+              </button>
+              <button
+                type="button"
+                onClick={useAtkPaste}
+                className="flex-1 rounded-lg border border-line p-2 text-left text-[10px] text-muted hover:text-content"
+              >
+                <div className="text-[11px] font-semibold text-content">虎骨膏 ×{itemCount(hero, '虎骨膏')}</div>
+                <div className="text-faint">{(hero.atkBuff ?? 0) > 0 ? '药效生效中' : '下场攻击 +8%'}</div>
+              </button>
+            </div>
+
+            <div className="mt-4 text-[11px] font-semibold text-content">闲情 · 酒与琴</div>
+            <div className="mt-1.5 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                disabled={itemCount(hero, '烧刀子') < 1}
+                onClick={drinkWine}
+                className="rounded-lg border border-line p-2 text-left text-[10px] text-muted hover:text-content disabled:opacity-40"
+              >
+                <div className="text-[11px] font-semibold text-content">饮烧刀子 ×{itemCount(hero, '烧刀子')}</div>
+                <div className="text-faint">酒意 +3 · 酒意满十化酒量</div>
+              </button>
+              <button
+                type="button"
+                onClick={playQin}
+                className="rounded-lg border border-line p-2 text-left text-[10px] text-muted hover:text-content"
+              >
+                <div className="text-[11px] font-semibold text-content">弹琴</div>
+                <div className="text-faint">烟波吟 · 有无效用看缘分</div>
+              </button>
+            </div>
+
             <p className="mt-3 text-[10px] leading-relaxed text-faint">
-              ※ 装备只按槽位生效：兵器加战力、护甲减伤；词条为暴击 / 吸血 / 速度；药品在战斗中按瓶消耗 ※
+              ※ 装备只按槽位生效：兵器加战力、护甲减伤；词条为暴击 / 吸血 / 速度；药品在战斗中按瓶消耗。草药可在上方炼丹，烧刀子只在游戏内转化为酒量 ※
             </p>
           </div>
         </div>
       )}
 
       {/* ════ 战斗界面（弹层）：双方人头 + 血条 + 回合战报 ════ */}
-      {battle && hero && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm">
-          <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl">
+      {battle && hero && battleSkills && (
+        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/75 p-0 backdrop-blur-sm sm:items-center sm:p-3">
+          <div
+            className={`jh-fade flex max-h-[96dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-line bg-surface shadow-2xl sm:rounded-2xl ${
+              battle.shake ? 'jh-shake' : ''
+            }`}
+          >
             {/* 战斗场景横幅 */}
-            <div className="relative h-28 sm:h-32">
+            <div className="relative h-24 shrink-0 sm:h-32">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={scene.url} alt={scene.label} className="h-full w-full object-cover" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent" />
               <div className="absolute bottom-2 left-3 text-[11px] font-semibold text-white">
                 ⚔️ 激战 · {scene.label}
+                {BOSS_NAMES.has(battle.enemyDef.name) ? ` · Boss 阶段 ${battle.phase ?? 1}` : ''}
               </div>
-              <div className="absolute right-3 top-2 rounded bg-black/50 px-2 py-0.5 text-[10px] text-white/80">
-                第 {battle.round} 回合
+              <div className="absolute right-3 top-2 flex flex-col items-end gap-1">
+                <span className="rounded bg-black/50 px-2 py-0.5 text-[10px] text-white/80">第 {battle.round} 回合</span>
+                <span className="rounded bg-accent/80 px-2 py-0.5 text-[10px] text-white">
+                  连招 {(battle.combo ?? 0)}/{COMBO_MAX} · 内息 {battle.breath ?? 0}
+                </span>
+              </div>
+              {/* Boss 阶段血条色带 */}
+              <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/40">
+                <div
+                  className={`h-full transition-all ${(battle.phase ?? 1) >= 3 ? 'bg-danger' : (battle.phase ?? 1) >= 2 ? 'bg-warning' : 'bg-success'}`}
+                  style={{ width: `${clamp((battle.enemyHp / battle.enemyMaxHp) * 100, 0, 100)}%` }}
+                />
               </div>
             </div>
 
@@ -2562,7 +3990,7 @@ export function JianghuGame() {
                   <div className="min-w-0">
                     <div className="truncate text-[13px] font-semibold text-content">你 · {SCHOOLS[hero.school].name}</div>
                     <div className="text-[10px] text-faint">
-                      速度 {heroSpeed(hero)} · 会心 {clamp(critChance(hero.wit) + gearStats(hero).crit, 8, 60)}% · 敌闪避 {dodgeChance(battle.enemyDef.wit, hero.school)}% · 敌招架 {parryChance(battle.enemyDef.qi, hero.school)}%
+                      速度 {heroSpeed(hero)} · 会心 {clamp(critChance(hero.wit) + gearStats(hero).crit + (sectOf(hero)?.crit ?? 0) + swordIntentBonus(hero), 8, 60)}% · 敌闪避 {dodgeChance(battle.enemyDef.wit, hero.school)}% · 敌招架 {parryChance(battle.enemyDef.qi, hero.school)}%
                     </div>
                   </div>
                 </div>
@@ -2623,21 +4051,46 @@ export function JianghuGame() {
               ))}
             </div>
 
-            {/* 操作 */}
-            <div className="flex flex-wrap gap-2 p-4">
+            {/* 操作：拇指可达底栏 */}
+            <div className="sticky bottom-0 flex flex-wrap gap-2 border-t border-line bg-surface p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
               {!battle.over ? (
                 <>
-                  <button type="button" onClick={() => actRound('attack')} className="btn-primary min-w-[140px] flex-1">
-                    {SCHOOLS[hero.school].emoji} 出手（{SCHOOLS[hero.school].name}）
+                  <button type="button" onClick={() => actRound('attack')} className="btn-primary min-w-[100px] flex-1 text-xs sm:text-sm">
+                    {SCHOOLS[hero.school].emoji} 普攻
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => actRound('skill')}
+                    disabled={(battle.breath ?? 0) < battleSkills.school.cost || (battle.skillCd?.school ?? 0) > 0}
+                    className="min-w-[100px] flex-1 rounded-lg border border-accent/50 bg-accent/10 px-2 py-2 text-xs text-accent disabled:opacity-40"
+                  >
+                    {battleSkills.school.name}
+                    {(battle.skillCd?.school ?? 0) > 0 ? ` CD${battle.skillCd?.school}` : ` ·${battleSkills.school.cost}息`}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => actRound('finisher')}
+                    disabled={(battle.combo ?? 0) < COMBO_MAX}
+                    className="min-w-[100px] flex-1 rounded-lg border border-warning/50 bg-warning/10 px-2 py-2 text-xs text-warning disabled:opacity-40"
+                  >
+                    {battleSkills.finisher.name}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => actRound('inner')}
+                    disabled={(battle.breath ?? 0) < battleSkills.inner.cost || (battle.skillCd?.inner ?? 0) > 0}
+                    className="rounded-lg border border-line px-2 py-2 text-xs text-muted disabled:opacity-40"
+                  >
+                    护体
                   </button>
                   {MED_ORDER.filter((med) => itemCount(hero, med) > 0).map((med) => (
                     <button
                       key={med}
                       type="button"
                       onClick={() => actRound('heal', med)}
-                      className="rounded-lg border border-success/50 bg-success/10 px-3 py-2 text-xs text-success hover:bg-success/20"
+                      className="rounded-lg border border-success/50 bg-success/10 px-2 py-2 text-[11px] text-success hover:bg-success/20"
                     >
-                      服{med} ×{itemCount(hero, med)}
+                      {med}×{itemCount(hero, med)}
                     </button>
                   ))}
                   <button
