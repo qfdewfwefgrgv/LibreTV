@@ -104,7 +104,34 @@ export function WorldScene({
   const nearRef = useRef<Npc | null>(null);
   const [nearNpc, setNearNpc] = useState<Npc | null>(null);
   const [cityKey, setCityKey] = useState('luoyang');
+  const [entered, setEntered] = useState(false);
+  const spritesRef = useRef<Record<string, HTMLImageElement | null>>({});
   const city = CITIES[cityKey] ?? LUOYANG;
+
+  // 预载贴片与主角小人
+  useEffect(() => {
+    const files: Record<string, string> = {
+      'hero-dao': '/game/world/hero-dao.webp',
+      'hero-jian': '/game/world/hero-jian.webp',
+      'hero-quan': '/game/world/hero-quan.webp',
+      ground: '/game/world/tiles/tile-ground.webp',
+      road: '/game/world/tiles/tile-road.webp',
+      'house-a': '/game/world/tiles/obj-house-a.webp',
+      'house-b': '/game/world/tiles/obj-house-b.webp',
+      temple: '/game/world/tiles/obj-temple.webp',
+      inn: '/game/world/tiles/obj-inn.webp',
+      gate: '/game/world/tiles/obj-gate.webp',
+      wall: '/game/world/tiles/obj-wall.webp',
+      bridge: '/game/world/tiles/obj-bridge.webp',
+      tree: '/game/world/tiles/obj-tree.webp',
+      lantern: '/game/world/tiles/obj-lantern.webp',
+    };
+    for (const k of Object.keys(files)) {
+      const img = new Image();
+      img.src = files[k];
+      img.onload = () => { spritesRef.current[k] = img; };
+    }
+  }, []);
 
   const enterNpc = useCallback(
     (npc: Npc | null) => {
@@ -153,6 +180,8 @@ export function WorldScene({
     window.addEventListener('resize', resize);
 
     const SOLID = city.buildings;
+    let groundPattern: CanvasPattern | null = null;
+    let roadPattern: CanvasPattern | null = null;
 
     const hits = (x: number, y: number, r: number) =>
       SOLID.some((b) => x + r > b.x && x - r < b.x + b.w && y + r > b.y && y - r < b.y + b.h);
@@ -203,44 +232,37 @@ export function WorldScene({
       cameraRef.current.y = Math.max(0, Math.min(city.h - vh, p.y - vh / 2));
     };
 
+    const buildingSprite = (b: Building) => {
+      const R = spritesRef.current;
+      switch (b.kind) {
+        case 'temple': return R['temple'];
+        case 'inn': return R['inn'];
+        case 'gate': return R['gate'];
+        case 'shop': return R['house-a'];
+        default:
+          // 民居按位置交替用两种屋顶，避免整条街重复
+          return (Math.floor(b.x / 120) % 2 === 0 ? R["house-a"] : R["house-b"]);
+      }
+    };
+
     const drawBuilding = (b: Building) => {
       const { x, y, w, h } = b;
-      // 投影
-      ctx.fillStyle = 'rgba(0,0,0,0.45)';
-      ctx.fillRect(x + 8, y + h - 6, w, 26);
-      // 墙体
-      ctx.fillStyle = b.kind === 'house' ? '#2a2e36' : '#3a2f28';
-      ctx.fillRect(x, y + h * 0.35, w, h * 0.65);
-      // 屋顶
-      ctx.fillStyle = ROOF[b.kind];
-      ctx.beginPath();
-      ctx.moveTo(x - 14, y + h * 0.38);
-      ctx.lineTo(x + w / 2, y);
-      ctx.lineTo(x + w + 14, y + h * 0.38);
-      ctx.closePath();
-      ctx.fill();
-      // 屋檐高光
-      ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      // 窗
-      const rows = Math.max(1, Math.floor(h / 90));
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < Math.floor(w / 90); c++) {
-          const wx = x + 26 + c * 90;
-          const wy = y + h * 0.5 + r * 70;
-          if (wx + 26 > x + w - 20) continue;
-          ctx.fillStyle = 'rgba(255,190,110,0.75)';
-          ctx.fillRect(wx, wy, 26, 34);
-          ctx.fillStyle = 'rgba(255,220,160,0.25)';
-          ctx.fillRect(wx - 4, wy - 4, 34, 42);
-        }
+      const sprite = buildingSprite(b);
+      if (sprite) {
+        // 按宽度铺满地块，底边对齐地块下沿，保持原图比例
+        const scale = (w * 1.18) / sprite.width;
+        const dw = sprite.width * scale;
+        const dh = sprite.height * scale;
+        ctx.drawImage(sprite, x + (w - dw) / 2, y + h - dh, dw, dh);
+      } else {
+        ctx.fillStyle = '#2a2e36';
+        ctx.fillRect(x, y, w, h);
       }
       if (b.name) {
         ctx.font = '600 13px system-ui, sans-serif';
         ctx.fillStyle = 'rgba(255,255,255,0.55)';
         ctx.textAlign = 'center';
-        ctx.fillText(b.name, x + w / 2, y + h * 0.36 - 10);
+        ctx.fillText(b.name, x + w / 2, y - 6);
         ctx.textAlign = 'left';
       }
     };
@@ -273,6 +295,18 @@ export function WorldScene({
     const drawPlayer = () => {
       const p = playerRef.current;
       const bob = Math.sin(performance.now() / 220) * 1.5;
+      const sprite = spritesRef.current[school];
+      if (sprite) {
+        const W = 64;
+        const H = 74;
+        ctx.save();
+        ctx.translate(p.x, p.y + 6);
+        if (p.face < 0) ctx.scale(-1, 1);
+        ctx.drawImage(sprite, -W / 2, -H + 12 + bob, W, H);
+        ctx.restore();
+        return;
+      }
+      // 贴图未就绪时的占位小人
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
       ctx.beginPath();
       ctx.ellipse(p.x, p.y + 24, 18, 8, 0, 0, Math.PI * 2);
@@ -312,17 +346,47 @@ export function WorldScene({
       const cam = cameraRef.current;
 
       ctx.clearRect(0, 0, vw, vh);
-      // 地面
-      ctx.fillStyle = city.ground;
-      ctx.fillRect(0, 0, vw, vh);
-
       ctx.save();
       ctx.translate(-cam.x, -cam.y);
 
-      // 主街
-      ctx.fillStyle = city.road;
-      ctx.fillRect(760, 90, 480, city.h - 180);
-      ctx.fillRect(90, 700, city.w - 180, 180);
+      // 地面：贴片平铺，缺图回落纯色
+      const groundImg = spritesRef.current['ground'];
+      if (groundImg && groundImg.complete) {
+        if (!groundPattern) groundPattern = ctx.createPattern(groundImg, 'repeat');
+        if (groundPattern) {
+          ctx.fillStyle = groundPattern;
+          ctx.fillRect(0, 0, city.w, city.h);
+        }
+      } else {
+        ctx.fillStyle = city.ground;
+        ctx.fillRect(0, 0, city.w, city.h);
+      }
+
+      // 主街：贴片平铺
+      const roadImg = spritesRef.current['road'];
+      if (roadImg && roadImg.complete) {
+        if (!roadPattern) roadPattern = ctx.createPattern(roadImg, 'repeat');
+        if (roadPattern) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(760, 90, 480, city.h - 180);
+          ctx.clip();
+          ctx.fillStyle = roadPattern;
+          ctx.fillRect(760, 90, 480, city.h - 180);
+          ctx.restore();
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(90, 700, city.w - 180, 180);
+          ctx.clip();
+          ctx.fillStyle = roadPattern;
+          ctx.fillRect(90, 700, city.w - 180, 180);
+          ctx.restore();
+        }
+      } else {
+        ctx.fillStyle = city.road;
+        ctx.fillRect(760, 90, 480, city.h - 180);
+        ctx.fillRect(90, 700, city.w - 180, 180);
+      }
 
       // 砖缝
       ctx.strokeStyle = 'rgba(255,255,255,0.03)';
@@ -383,6 +447,41 @@ export function WorldScene({
   const onPointerUp = () => {
     joyRef.current = { active: false, dx: 0, dy: 0, id: -1 };
   };
+
+  if (!entered) {
+    return (
+      <div className="fixed inset-0 z-[85] flex items-center justify-center overflow-hidden bg-black">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/game/world/luoyang.webp" alt="洛阳城" className="absolute inset-0 h-full w-full object-cover opacity-75" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/25 to-black/45" />
+        <div className="relative flex flex-col items-center gap-3 px-6 text-center">
+          <div className="text-[10px] tracking-[0.35em] text-white/40">OPEN WORLD</div>
+          <h2 className="text-4xl font-black text-white drop-shadow-[0_4px_18px_rgba(0,0,0,0.9)] sm:text-5xl">洛阳城</h2>
+          <p className="max-w-md text-[11px] leading-relaxed text-white/65 sm:text-xs">
+            WASD / 方向键行走，手机拖动屏幕任意位置当摇杆。
+            <br />
+            靠近头顶带 <span className="text-warning">!</span> 或 <span className="text-accent">?</span> 的人物，按 E 或点按钮交谈。
+          </p>
+          <div className="mt-3 flex gap-3">
+            <button
+              type="button"
+              onClick={() => setEntered(true)}
+              className="rounded-full bg-accent px-7 py-2.5 text-sm font-bold text-black shadow-lg transition hover:scale-105"
+            >
+              进入城中
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full border border-white/30 px-7 py-2.5 text-sm text-white/85 hover:bg-white/10"
+            >
+              离开
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-[85] flex flex-col bg-black">
