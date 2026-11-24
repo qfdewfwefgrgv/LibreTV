@@ -30,6 +30,7 @@ import {
 } from '@/components/jianghu/combat-ext';
 import { CHAPTER4_LABEL, CHAPTER4_NODES, CHAPTER4_SCENES } from '@/components/jianghu/story-ch4';
 import { CHAPTER5_LABEL, CHAPTER5_NODES, CHAPTER5_SCENES } from '@/components/jianghu/story-ch5';
+import { WorldScene } from '@/components/jianghu/world';
 import {
   QUEST_CHAINS,
   advanceQuestStep,
@@ -1715,6 +1716,11 @@ export function JianghuGame() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [showLog, setShowLog] = useState(false);
   const [videoOpen, setVideoOpen] = useState<{ src: string; title: string } | null>(null);
+  // 对白逐字显示：模拟游戏对话框
+  const [worldOpen, setWorldOpen] = useState(false);
+
+  const [typedLen, setTypedLen] = useState(0);
+  const [typingDone, setTypingDone] = useState(false);
   const [panel, setPanel] = useState<null | 'martial' | 'town' | 'bag' | 'quest' | 'sect' | 'meridian'>(null);
   const [cleared, setCleared] = useState<string[]>([]);
   const [questProgress, setQuestProgress] = useState<QuestProgress>({});
@@ -1936,6 +1942,24 @@ export function JianghuGame() {
     setBattleFx([]);
     setChapterIntro(null);
   };
+
+  // 逐字显示当前节点正文；切换节点时重置
+  useEffect(() => {
+    const text = NODES[nodeId]?.text ?? "";
+    setTypedLen(0);
+    setTypingDone(text.length === 0);
+    if (!text.length) return;
+    let i = 0;
+    const timer = window.setInterval(() => {
+      i += 1;
+      setTypedLen(i);
+      if (i >= text.length) {
+        window.clearInterval(timer);
+        setTypingDone(true);
+      }
+    }, 22);
+    return () => window.clearInterval(timer);
+  }, [nodeId]);
 
   // ——— 剧情推进 ———
 
@@ -3298,14 +3322,26 @@ export function JianghuGame() {
               <button type="button" onClick={() => setPanel('sect')} className="rounded-md border border-line px-2 py-1 text-[10px] text-muted hover:text-content">
                 门派
               </button>
+              <button type="button" onClick={() => setWorldOpen(true)} className="rounded-md border border-accent/50 bg-accent/10 px-2 py-1 text-[10px] text-accent hover:bg-accent/20">
+                世界
+              </button>
             </div>
           </div>
 
           {/* 场景图（实物） */}
           <div className="relative mb-3 overflow-hidden rounded-xl border border-line">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img key={sceneKey} src={sceneArt(sceneKey)} onError={onSceneArtError(sceneKey)} alt={scene.label} loading="lazy" className="h-48 w-full object-cover transition-transform duration-700 sm:h-72" />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-black/30" />
+            <img key={sceneKey} src={sceneArt(sceneKey)} onError={onSceneArtError(sceneKey)} alt={scene.label} loading="lazy" className="h-64 w-full object-cover transition-transform duration-700 sm:h-96" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/10 to-black/35" />
+            {/* 主角立绘：站在场景右侧 */}
+            <div className="pointer-events-none absolute bottom-0 right-2 h-40 w-28 sm:right-6 sm:h-64 sm:w-40">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={PORTRAITS[avatarKey]}
+                alt="主角"
+                className="h-full w-full object-cover object-top [mask-image:linear-gradient(to_bottom,black_62%,transparent)] drop-shadow-[0_6px_18px_rgba(0,0,0,0.75)]"
+              />
+            </div>
             <div className="absolute left-3 top-3 rounded-md bg-black/45 px-2 py-1 text-[10px] text-white/85">
               {CHAPTER_LABELS[node.chapter]}
             </div>
@@ -3380,43 +3416,62 @@ export function JianghuGame() {
               </div>
             </div>
           ) : (
-            /* 剧情正文 + 抉择 */
-            <div key={nodeId} className="jh-fade rounded-xl border border-line bg-card p-4">
-              <p className="mb-4 text-[13px] leading-loose text-content">{node.text}</p>
-              <div className="space-y-2">
-                {node.choices.map((c, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => choose(c)}
-                    className={`flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left text-[13px] transition-all hover:translate-x-0.5 ${
-                      c.combat
-                        ? 'border-danger/40 bg-danger/5 text-content hover:border-danger/70'
-                        : 'border-line bg-surface text-content hover:border-accent/50'
-                    }`}
-                  >
-                    <span>
-                      {c.combat && <span className="mr-1.5">⚔️</span>}
-                      {c.label}
-                    </span>
-                    <span className="ml-3 flex shrink-0 gap-1.5 text-[10px]">
-                      {c.combat ? (
-                        <span className="text-danger">战 · {c.combat.enemy}（{SCHOOLS[ENEMIES[c.combat.enemy]?.school ?? 'dao'].name}）</span>
-                      ) : (
-                        effectHints(c.effects).map((h, j) => (
-                          <span key={j} className={h.tone}>{h.text}</span>
-                        ))
-                      )}
-                    </span>
-                  </button>
-                ))}
+            /* 剧情对话框：场景 + 逐字对白 + 行动选项 */
+            <div key={nodeId} className="jh-fade">
+              <div className="overflow-hidden rounded-xl border border-white/12 bg-black/72 shadow-[0_8px_30px_rgba(0,0,0,0.45)] backdrop-blur-sm">
+                {/* 标题条 */}
+                <div className="flex items-center justify-between gap-2 border-b border-white/10 px-3 py-1.5">
+                  <span className="text-[11px] font-semibold tracking-wide text-accent">{node.title}</span>
+                  <span className="text-[10px] text-white/40">{scene.label}</span>
+                </div>
+
+                {/* 正文：点击跳过打字机 */}
+                <button
+                  type="button"
+                  onClick={() => { if (!typingDone) setTypedLen(node.text.length); setTypingDone(true); }}
+                  className="block w-full px-3.5 py-3 text-left"
+                >
+                  <p className="text-[14px] leading-[1.85] text-white/92 sm:text-[15px]">
+                    {node.text.slice(0, typedLen)}
+                    {!typingDone && <span className="ml-0.5 inline-block h-[1em] w-[2px] animate-pulse bg-accent align-middle" />}
+                  </p>
+                </button>
+
+                {/* 行动选项：打完字才可点 */}
+                <div className={"space-y-1.5 px-3 pb-3 transition-opacity duration-300 " + (typingDone ? "opacity-100" : "pointer-events-none opacity-0")}>
+                  {node.choices.map((c, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => choose(c)}
+                      className={"group flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-[13px] transition-all hover:translate-x-0.5 " + (c.combat ? "border-danger/45 bg-danger/12 text-white/95 hover:border-danger/75" : "border-white/15 bg-white/5 text-white/92 hover:border-accent/60 hover:bg-white/10")}
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <span className="text-[10px] text-white/35 group-hover:text-accent">{i + 1}</span>
+                        {c.combat && <span>⚔️</span>}
+                        <span>{c.label}</span>
+                      </span>
+                      <span className="ml-3 flex shrink-0 gap-1.5 text-[10px]">
+                        {c.combat ? (
+                          <span className="text-danger">战 · {c.combat.enemy}</span>
+                        ) : (
+                          effectHints(c.effects).map((h, j) => (
+                            <span key={j} className={h.tone}>{h.text}</span>
+                          ))
+                        )}
+                      </span>
+                    </button>
+                  ))}
+                </div>
               </div>
+
+              {/* 行囊 */}
               {hero.items.length > 0 && (
-                <div className="mt-4 flex flex-wrap gap-1.5 border-t border-line pt-3 text-[10px] text-muted">
-                  <span className="text-faint">行囊：</span>
+                <div className="mt-2 flex flex-wrap gap-1.5 px-1 text-[10px] text-white/55">
+                  <span className="text-white/35">行囊：</span>
                   {groupItems(hero.items).map((it) => (
-                    <span key={it.name} className="chip bg-accent/10 text-accent">
-                      {it.name}{it.count > 1 ? ` ×${it.count}` : ''}
+                    <span key={it.name} className="rounded bg-white/8 px-1.5 py-0.5 text-white/75">
+                      {it.name}{it.count > 1 ? " ×" + it.count : ""}
                     </span>
                   ))}
                 </div>
@@ -4051,6 +4106,18 @@ export function JianghuGame() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ════ 可自由行走的世界层 ════ */}
+      {worldOpen && (
+        <WorldScene
+          onClose={() => setWorldOpen(false)}
+          school={hero?.school ?? "dao"}
+          onEnterNode={(id) => {
+            setWorldOpen(false);
+            if (hero && NODES[id]) enter(id, hero);
+          }}
+        />
       )}
 
       {/* ════ 战斗界面（弹层）：双方人头 + 血条 + 回合战报 ════ */}
