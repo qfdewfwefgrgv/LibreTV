@@ -30,7 +30,7 @@ import {
 } from '@/components/jianghu/combat-ext';
 import { CHAPTER4_LABEL, CHAPTER4_NODES, CHAPTER4_SCENES } from '@/components/jianghu/story-ch4';
 import { CHAPTER5_LABEL, CHAPTER5_NODES, CHAPTER5_SCENES } from '@/components/jianghu/story-ch5';
-import { WorldScene } from '@/components/jianghu/world';
+import { WORLD_NPC_QUESTS, WorldScene } from '@/components/jianghu/world';
 import {
   QUEST_CHAINS,
   advanceQuestStep,
@@ -3101,6 +3101,33 @@ export function JianghuGame() {
     NODE_SCENE[nodeId] ??
     (node?.chapter === 1 ? 'luoyang-snow' : node?.chapter === 2 ? 'jiangnan' : node?.chapter === 4 ? 'huashan' : 'peak');
   const scene = SCENES[sceneKey];
+
+  // 世界视图：任务进度 -> 城中 NPC 标记 + 常驻 HUD（一个 NPC 只挂一条任务）
+  const worldNpcQuests = (() => {
+    const map: Record<string, { title: string; done: boolean; active: boolean }> = {};
+    for (const [npcId, questId] of Object.entries(WORLD_NPC_QUESTS)) {
+      const q = QUEST_CHAINS.find((x) => x.id === questId);
+      if (!q) continue;
+      const prog = questProgress[q.id];
+      map[npcId] = { title: q.title, done: Boolean(prog?.done), active: activeQuestId === q.id };
+    }
+    return map;
+  })();
+
+  const worldHud = (() => {
+    const main = QUEST_CHAINS.filter((q) => q.kind === '链式');
+    const side = QUEST_CHAINS.filter((q) => q.kind !== '链式');
+    const doneCount = (arr: typeof QUEST_CHAINS) => arr.filter((q) => questProgress[q.id]?.done).length;
+    const active = QUEST_CHAINS.find((q) => q.id === activeQuestId);
+    return {
+      activeTitle: active?.title,
+      mainDone: doneCount(main),
+      mainTotal: main.length,
+      sideDone: doneCount(side),
+      sideTotal: side.length,
+      reputation: hero?.chivalry ?? 0,
+    };
+  })();
   const playerFx = battleFx.filter((f) => f.side === 'player');
   const enemyFx = battleFx.filter((f) => f.side === 'enemy');
   const lastPlayerFx = playerFx[playerFx.length - 1];
@@ -4226,6 +4253,8 @@ export function JianghuGame() {
         <WorldScene
           onClose={() => setWorldOpen(false)}
           school={hero?.school ?? "dao"}
+          npcQuests={worldNpcQuests}
+          hud={worldHud}
           onEnterNode={(id) => {
             setWorldOpen(false);
             if (hero && NODES[id]) enter(id, hero);

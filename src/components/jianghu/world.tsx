@@ -17,7 +17,14 @@ type Npc = {
   node: string;
   kind: 'main' | 'side';
   hint: string;
+  questTitle?: string;
+  questDone?: boolean;
+  questActive?: boolean;
+  /** 所属区域 key */
+  region?: string;
 };
+
+type Region = { key: string; name: string; x: number; y: number; w: number; h: number };
 
 type Building = {
   x: number;
@@ -37,6 +44,7 @@ type City = {
   road: string;
   buildings: Building[];
   npcs: Npc[];
+  regions?: Region[];
   water?: { x: number; y: number; w: number; h: number };
 };
 
@@ -69,12 +77,33 @@ const LUOYANG: City = {
     { x: 1180, y: 950, w: 300, h: 170, kind: 'shop', name: '茶楼' },
   ],
   npcs: [
-    { id: 'n1', name: '顾长风', x: 1000, y: 900, node: 'a01', kind: 'main', hint: '主线 · 顾长风在等你' },
-    { id: 'n2', name: '苏挽', x: 520, y: 760, node: 'a05', kind: 'main', hint: '主线 · 白衣女子受了伤' },
-    { id: 'n3', name: '独眼掌柜', x: 380, y: 380, node: 'a06', kind: 'side', hint: '支线 · 悦来客栈有消息' },
-    { id: 'n4', name: '灯市老翁', x: 470, y: 1050, node: 'a04', kind: 'side', hint: '支线 · 灯市听棋' },
-    { id: 'n5', name: '青城弟子', x: 1200, y: 400, node: 'a02', kind: 'side', hint: '支线 · 渡口风波' },
+    { id: 'n1', name: '顾长风', x: 1000, y: 900, node: 'a01', kind: 'main', hint: '主线 · 顾长风在等你', region: 'gov' },
+    { id: 'n2', name: '苏挽', x: 520, y: 760, node: 'a05', kind: 'main', hint: '主线 · 白衣女子受了伤', region: 'guild' },
+    { id: 'n3', name: '独眼掌柜', x: 380, y: 380, node: 'a06', kind: 'side', hint: '支线 · 悦来客栈有消息', region: 'inn' },
+    { id: 'n4', name: '灯市老翁', x: 470, y: 1050, node: 'a04', kind: 'side', hint: '支线 · 灯市听棋', region: 'market' },
+    { id: 'n5', name: '青城弟子', x: 1200, y: 400, node: 'a02', kind: 'side', hint: '支线 · 渡口风波', region: 'smith' },
   ],
+  regions: [
+    { key: 'gate', name: '洛阳城门', x: 760, y: 0, w: 480, h: 220 },
+    { key: 'inn', name: '悦来客栈', x: 220, y: 220, w: 320, h: 250 },
+    { key: 'herb', name: '百草堂', x: 580, y: 190, w: 280, h: 220 },
+    { key: 'smith', name: '铁匠铺', x: 1040, y: 200, w: 300, h: 230 },
+    { key: 'gov', name: '洛阳官府', x: 740, y: 520, w: 520, h: 330 },
+    { key: 'guild', name: '武馆', x: 200, y: 600, w: 300, h: 260 },
+    { key: 'market', name: '城南集市', x: 300, y: 930, w: 340, h: 230 },
+    { key: 'black', name: '地下黑市', x: 1140, y: 900, w: 380, h: 260 },
+    { key: 'street', name: '洛阳主街', x: 700, y: 180, w: 620, h: 760 },
+    { key: 'woods', name: '城外山林', x: 0, y: 1240, w: 2000, h: 260 },
+  ],
+};
+
+/** NPC -> 任务链 id 的显式映射（替代此前的下标取模） */
+export const WORLD_NPC_QUESTS: Record<string, string> = {
+  n1: 'q-ember-scout',
+  n2: 'q-ember-letter',
+  n3: 'q-temple-elder',
+  n4: 'q-fuzhou-chain',
+  n5: 'q-valley-herb',
 };
 
 const CITIES: Record<string, City> = { luoyang: LUOYANG };
@@ -87,14 +116,27 @@ const ROOF: Record<Building['kind'], string> = {
   gate: '#2f3a44',
 };
 
+export type WorldHud = {
+  activeTitle?: string;
+  mainDone: number;
+  mainTotal: number;
+  sideDone: number;
+  sideTotal: number;
+  reputation?: number;
+};
+
 export function WorldScene({
   onEnterNode,
   onClose,
   school,
+  hud,
+  npcQuests,
 }: {
   onEnterNode: (nodeId: string) => void;
   onClose: () => void;
   school: 'quan' | 'jian' | 'dao';
+  hud?: WorldHud;
+  npcQuests?: Record<string, { title: string; done: boolean; active: boolean }>;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const keysRef = useRef<Set<string>>(new Set());
@@ -102,9 +144,13 @@ export function WorldScene({
   const playerRef = useRef({ x: 1000, y: 1000, vx: 0, vy: 0, face: 1 });
   const cameraRef = useRef({ x: 0, y: 0 });
   const nearRef = useRef<Npc | null>(null);
+  const questsRef = useRef<Record<string, { title: string; done: boolean; active: boolean }>>({});
+  useEffect(() => { questsRef.current = npcQuests ?? {}; }, [npcQuests]);
   const [nearNpc, setNearNpc] = useState<Npc | null>(null);
   const [cityKey, setCityKey] = useState('luoyang');
   const [entered, setEntered] = useState(false);
+  const [regionName, setRegionName] = useState('');
+  const regionRef = useRef('');
   const spritesRef = useRef<Record<string, HTMLImageElement | null>>({});
   const city = CITIES[cityKey] ?? LUOYANG;
 
@@ -180,6 +226,15 @@ export function WorldScene({
     window.addEventListener('resize', resize);
 
     const SOLID = city.buildings;
+
+    /** 按矩形从最小优先匹配所在区域 */
+    const regionAt = (x: number, y: number): Region | null => {
+      const list = (city.regions ?? []).slice().sort((a, b) => a.w * a.h - b.w * b.h);
+      for (const r of list) {
+        if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return r;
+      }
+      return null;
+    };
     let groundPattern: CanvasPattern | null = null;
     let roadPattern: CanvasPattern | null = null;
 
@@ -223,6 +278,13 @@ export function WorldScene({
           best = n;
         }
       }
+      const rg = regionAt(p.x, p.y);
+      const rname = rg?.name ?? city.name + '城内';
+      if (regionRef.current !== rname) {
+        regionRef.current = rname;
+        setRegionName(rname);
+      }
+
       nearRef.current = best;
       setNearNpc((prev) => (prev?.id === best?.id ? prev : best));
 
@@ -284,11 +346,29 @@ export function WorldScene({
       ctx.beginPath();
       ctx.arc(n.x, n.y - 14 + bob, 10, 0, Math.PI * 2);
       ctx.fill();
-      // 标记
-      ctx.fillStyle = n.kind === 'main' ? '#ffd166' : '#8ecae6';
-      ctx.font = '700 16px system-ui, sans-serif';
+      // 任务标记：追踪中金色脉冲，未完成红色/蓝色，已完成淡灰
+      const q = questsRef.current[n.id];
+      const active = q?.active === true;
+      const done = q?.done === true;
+      const px = playerRef.current;
+      if (active) {
+        const pulse = 1 + Math.sin(performance.now() / 260) * 0.18;
+        ctx.strokeStyle = 'rgba(255,209,102,0.85)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y - 6, 22 * pulse, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.fillStyle = done ? 'rgba(160,170,180,0.45)' : active ? '#ffd166' : n.kind === 'main' ? '#e05a4a' : '#8ecae6';
+      ctx.font = '700 17px system-ui, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(n.kind === 'main' ? '!' : '?', n.x, n.y - 32 + bob);
+      ctx.fillText(done ? '·' : n.kind === 'main' ? '!' : '?', n.x, n.y - 32 + bob);
+      if (active) {
+        const dist = Math.round(Math.hypot(px.x - n.x, px.y - n.y) / 10);
+        ctx.font = '600 11px system-ui, sans-serif';
+        ctx.fillStyle = 'rgba(255,209,102,0.95)';
+        ctx.fillText(dist + 'm', n.x, n.y - 48 + bob);
+      }
       ctx.textAlign = 'left';
     };
 
@@ -488,7 +568,7 @@ export function WorldScene({
       {/* 顶栏 */}
       <div className="flex items-center justify-between gap-2 border-b border-white/10 bg-black/70 px-3 py-2 backdrop-blur">
         <div className="flex items-center gap-2">
-          <span className="rounded bg-accent/20 px-2 py-0.5 text-[11px] font-semibold text-accent">🗺️ {city.name}城</span>
+          <span className="rounded bg-accent/20 px-2 py-0.5 text-[11px] font-semibold text-accent">🗺️ {city.name}城{regionName ? ` · ${regionName}` : ''}</span>
           <span className="text-[10px] text-white/45">WASD / 拖屏移动 · 靠近人物按 E 或点下方按钮</span>
         </div>
         <button
@@ -499,6 +579,21 @@ export function WorldScene({
           离开世界
         </button>
       </div>
+
+      {/* 任务 HUD */}
+      {hud && (
+        <div className="pointer-events-none absolute left-3 top-14 z-10 w-60 rounded-xl border border-white/12 bg-black/70 p-2.5 backdrop-blur-sm">
+          <div className="text-[10px] tracking-wide text-white/40">洛阳 · 当前目标</div>
+          <div className="mt-0.5 truncate text-[12px] font-semibold text-accent">
+            {hud.activeTitle ?? '自由探索'}
+          </div>
+          <div className="mt-1.5 flex gap-3 text-[10px] text-white/60">
+            <span>主线 {hud.mainDone}/{hud.mainTotal}</span>
+            <span>支线 {hud.sideDone}/{hud.sideTotal}</span>
+            {typeof hud.reputation === 'number' && <span>声望 {hud.reputation}</span>}
+          </div>
+        </div>
+      )}
 
       {/* 画布 */}
       <div className="relative flex-1 overflow-hidden">
