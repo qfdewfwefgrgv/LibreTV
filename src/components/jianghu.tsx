@@ -31,12 +31,16 @@ import {
 import { CHAPTER4_LABEL, CHAPTER4_NODES, CHAPTER4_SCENES } from '@/components/jianghu/story-ch4';
 import { CHAPTER5_LABEL, CHAPTER5_NODES, CHAPTER5_SCENES } from '@/components/jianghu/story-ch5';
 import { WORLD_NPC_QUESTS, WorldScene } from '@/components/jianghu/world';
+import { STORY_QUESTS } from '@/components/jianghu/quests-story';
 import {
   QUEST_CHAINS,
   advanceQuestStep,
   questStepHint,
   type QuestProgress,
 } from '@/components/jianghu/quests-ext';
+
+/** 全量任务链：原有 17 条 + 剧情联动 5 条 */
+const ALL_CHAINS = [...QUEST_CHAINS, ...STORY_QUESTS];
 
 /**
  * 江湖风云录：四章文字冒险 + 回合制战斗。
@@ -1225,7 +1229,7 @@ const QUESTS: Quest[] = [
     reward: { exp: 220, silver: 140, contribution: 20, items: ['冰蚕手套'] },
   },
   // 多步链与主线支线
-  ...(QUEST_CHAINS as unknown as Quest[]),
+  ...(ALL_CHAINS as unknown as Quest[]),
 ];
 
 /** 福州挖宝奖池：原作中能锻造吸血的多为紫装 */
@@ -2398,7 +2402,7 @@ export function JianghuGame() {
     if (!id) return;
     const q = QUESTS.find((x) => x.id === id);
     if (!q?.steps) return;
-    const result = advanceQuestStep(questProgress, id, action, QUEST_CHAINS);
+    const result = advanceQuestStep(questProgress, id, action, ALL_CHAINS);
     setQuestProgress(result.progress);
     if (result.message) pushLog(result.message, 'event');
   };
@@ -3106,7 +3110,7 @@ export function JianghuGame() {
   const worldNpcQuests = (() => {
     const map: Record<string, { title: string; done: boolean; active: boolean }> = {};
     for (const [npcId, questId] of Object.entries(WORLD_NPC_QUESTS)) {
-      const q = QUEST_CHAINS.find((x) => x.id === questId);
+      const q = ALL_CHAINS.find((x) => x.id === questId);
       if (!q) continue;
       const prog = questProgress[q.id];
       map[npcId] = { title: q.title, done: Boolean(prog?.done), active: activeQuestId === q.id };
@@ -3115,10 +3119,10 @@ export function JianghuGame() {
   })();
 
   const worldHud = (() => {
-    const main = QUEST_CHAINS.filter((q) => q.kind === '链式');
-    const side = QUEST_CHAINS.filter((q) => q.kind !== '链式');
-    const doneCount = (arr: typeof QUEST_CHAINS) => arr.filter((q) => questProgress[q.id]?.done).length;
-    const active = QUEST_CHAINS.find((q) => q.id === activeQuestId);
+    const main = ALL_CHAINS.filter((q) => q.kind === '链式');
+    const side = ALL_CHAINS.filter((q) => q.kind !== '链式');
+    const doneCount = (arr: typeof ALL_CHAINS) => arr.filter((q) => questProgress[q.id]?.done).length;
+    const active = ALL_CHAINS.find((q) => q.id === activeQuestId);
     return {
       activeTitle: active?.title,
       mainDone: doneCount(main),

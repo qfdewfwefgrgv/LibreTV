@@ -128,3 +128,43 @@ npx vitest run        36 files / 445 tests passed
 
 - 区域目前只做「识别 + 显示」，尚未绑定**独立玩法**（任务书要求「每个场景必须有独立玩法，不能只是换背景图」）。这是第三~五步的主要工作量。
 - `Region` 还没有 `desc`/`enemies`/`interactables` 字段，需要在做「城门盘查」「黑市交易」这些时补。
+
+
+---
+
+# 附录二：五条剧情联动任务链（第七阶段首刀）
+
+## 修改文件清单
+
+| 文件 | 改动 |
+|---|---|
+| `src/components/jianghu/quests-story.ts`（新增） | 5 条链式任务，每条的每一步都绑定**现有生活技能动作** |
+| `src/components/jianghu.tsx` | 导入 `STORY_QUESTS`；新增 `ALL_CHAINS = [...QUEST_CHAINS, ...STORY_QUESTS]`；8 处运行时引用改指向 `ALL_CHAINS` |
+
+## 五条链与系统联动
+
+| 任务链 | 步骤（全部复用现有动作） | 关联系统 |
+|---|---|---|
+| 救命的七叶草 | 采药 → 炼丹 → 交付 | 采药 / 炼丹 |
+| 铁匠的遗愿 | 采矿 → 锻造 → 交付 | 采矿 / 锻造 |
+| 失传的内功 | 探索 → 战斗 → 交付 | 探索 / 战斗 |
+| 药王谷秘闻 | 探索 → 炼丹 → 对话 | 采药 / 炼丹 / NPC |
+| 寒铁矿脉 | 探索 → 战斗 → 锻造 | 探索 / 战斗 / 锻造 |
+
+动作映射：`explore` 接 `exploreHerbs/digTreasure`，`craft` 接 `craftMed/forgeWeapon`，`fight` 接 `startBattle`，`deliver`/`talk` 接交还与对话。
+
+## 测试证据
+
+```
+npx tsc --noEmit      0 error
+npm run build         ✓ Compiled successfully in 3.7s
+npx vitest run        36 files / 445 tests passed
+剧情链数量            5 条
+ALL_CHAINS 引用        8 处
+```
+
+## 未完成 / 风险
+
+1. 任务链目前是**独立接取**，还没有挂在四章/第五章的具体剧情节点上（需要给节点加「触发任务」字段，而不是另开入口）。
+2. 奖励里的「丹方 / 图纸 / 内功残页」目前是普通道具名，**还没有解锁真实内容**，需要在丹方表与锻造图纸表里补实体。
+3. 步骤完成依赖玩家先「接取」，未接取时做动作不会推进；体验上需要在相关区域给出提示，否则容易漏接。
