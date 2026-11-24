@@ -33,6 +33,18 @@ import { CHAPTER5_LABEL, CHAPTER5_NODES, CHAPTER5_SCENES } from '@/components/ji
 import { WORLD_NPC_QUESTS, WorldScene } from '@/components/jianghu/world';
 import { STORY_QUESTS } from '@/components/jianghu/quests-story';
 import {
+  CHAPTER_SHARDS,
+  SHARD_PER_MAP,
+  TREASURE_TIERS,
+  claimChapterShards,
+  craftMaps,
+  defaultTreasure,
+  normalizeTreasure,
+  openTreasure,
+  treasureDex,
+  type TreasureState,
+} from '@/components/jianghu/treasure';
+import {
   QUEST_CHAINS,
   advanceQuestStep,
   questStepHint,
@@ -555,6 +567,8 @@ type SaveData = {
   questProgress?: QuestProgress;
   /** 当前接取中的链式任务 id */
   activeQuestId?: string | null;
+  /** 藏宝图进度 */
+  treasure?: TreasureState;
 };
 
 type PendingGiftReward = {
@@ -1769,9 +1783,10 @@ export function JianghuGame() {
 
   const [typedLen, setTypedLen] = useState(0);
   const [typingDone, setTypingDone] = useState(false);
-  const [panel, setPanel] = useState<null | 'martial' | 'town' | 'bag' | 'quest' | 'sect' | 'meridian'>(null);
+  const [panel, setPanel] = useState<null | 'martial' | 'town' | 'bag' | 'quest' | 'sect' | 'meridian' | 'treasure'>(null);
   const [cleared, setCleared] = useState<string[]>([]);
   const [questProgress, setQuestProgress] = useState<QuestProgress>({});
+  const [treasure, setTreasure] = useState<TreasureState>(defaultTreasure());
   const [activeQuestId, setActiveQuestId] = useState<string | null>(null);
   const [saveData, setSaveData] = useState<SaveData | null>(null);
   /** 读档时算出的离线挂机收益，供开局界面展示 */
@@ -1834,6 +1849,7 @@ export function JianghuGame() {
         }
         if (data.questProgress) setQuestProgress(data.questProgress);
         if (data.activeQuestId) setActiveQuestId(data.activeQuestId);
+      setTreasure(normalizeTreasure(data.treasure));
       }
     } catch {
       // 存档损坏或不可读时当作没有存档
@@ -1854,13 +1870,14 @@ export function JianghuGame() {
       lastIdle: Date.now(),
       questProgress,
       activeQuestId,
+      treasure,
     };
     try {
       window.localStorage.setItem(SAVE_KEY, JSON.stringify(data));
     } catch {
       // 存储不可用时静默跳过
     }
-  }, [phase, hero, nodeId, cleared, battle, playerName, avatarKey, originKey, questProgress, activeQuestId]);
+  }, [phase, hero, nodeId, cleared, battle, playerName, avatarKey, originKey, questProgress, activeQuestId, treasure]);
 
   // 走到结局即清档，避免读档回到结局前一幕
   useEffect(() => {
@@ -1910,6 +1927,7 @@ export function JianghuGame() {
     setPanel(null);
     setCleared([]);
     setQuestProgress({});
+    setTreasure(defaultTreasure());
     setActiveQuestId(null);
     travelCount.current = 0;
     logSeq.current = 2 + gifted.lines.length;
@@ -2408,6 +2426,36 @@ export function JianghuGame() {
   };
 
   // ——— 场景探索 / 福州挖宝 / 炼丹 / 饮酒弹琴 ———
+
+  // ——— 藏宝图 ———
+  const claimTreasureChapter = (chapter: number) => {
+    const r = claimChapterShards(treasure, chapter);
+    if (r.gained === 0) { pushLog(r.message, 'lose'); return; }
+    setTreasure(r.state);
+    pushLog(r.message, 'win');
+  };
+
+  const craftTreasureMaps = () => {
+    const r = craftMaps(treasure);
+    if (r.made === 0) { pushLog('【藏宝图】碎片不足，凑满 100 微单位才能拼出一张。', 'lose'); return; }
+    setTreasure(r.state);
+    pushLog(`【藏宝图】碎片拼合，得到 ${r.made} 张藏宝图。`, 'win');
+  };
+
+  const openTreasureMap = () => {
+    if (!hero) return;
+    const skills = hero.lifeSkills ?? defaultLifeSkills();
+    const r = openTreasure(treasure, hero.level, skills as unknown as Record<string, { level: number }>);
+    if (!r.ok) { pushLog(r.message, 'lose'); return; }
+    setTreasure(r.state);
+    const rw = r.rewards!;
+    let next = applyEffects(hero, { items: rw.items });
+    next = { ...next, exp: next.exp, silver: next.silver + rw.silver };
+    setHero(gainWine(next, 1));
+    pushLog(r.message, 'win');
+    pushLog(`【宝藏】经验 +${rw.exp} · 银两 +${rw.silver} · ${rw.items.join('、')}`, 'win');
+    bumpQuest('deliver');
+  };
 
   const exploreHerbs = () => {
     if (!hero) return;
@@ -3433,6 +3481,9 @@ export function JianghuGame() {
               <button type="button" onClick={() => setPanel('sect')} className="rounded-md border border-line px-2 py-1 text-[10px] text-muted hover:text-content">
                 门派
               </button>
+              <button type="button" onClick={() => setPanel('treasure')} className="rounded-md border border-warning/50 bg-warning/10 px-2 py-1 text-[10px] text-warning hover:bg-warning/20">
+                宝藏
+              </button>
               <button type="button" onClick={() => setWorldOpen(true)} className="rounded-md border border-accent/50 bg-accent/10 px-2 py-1 text-[10px] text-accent hover:bg-accent/20">
                 世界
               </button>
@@ -3604,6 +3655,95 @@ export function JianghuGame() {
           </div>
         </div>
       )}
+
+      {/* ════ 藏宝图与江湖秘藏 ════ */}
+      {panel === 'treasure' && hero && (() => {
+        const dex = treasureDex(treasure);
+        const nextTier = treasure.maps[0];
+        const nextDef = TREASURE_TIERS.find((t) => t.tier === nextTier);
+        return (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm" onClick={() => setPanel(null)}>
+            <div className="max-h-[86vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-line bg-surface p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="mb-3 flex items-center justify-between">
+                <div className="text-sm font-bold text-content">🏴 江湖秘藏</div>
+                <button type="button" onClick={() => setPanel(null)} className="rounded-md border border-line px-2 py-1 text-[10px] text-muted hover:text-content">关闭</button>
+              </div>
+
+              {/* 碎片进度 */}
+              <div className="rounded-lg border border-line p-2.5">
+                <div className="flex items-baseline justify-between text-[11px]">
+                  <span className="font-semibold text-content">藏宝图碎片</span>
+                  <span className="text-muted">{dex.shards} / {SHARD_PER_MAP} 微单位 · {dex.shardPercent}%</span>
+                </div>
+                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-surface-raised">
+                  <div className="h-full rounded-full bg-warning transition-all" style={{ width: dex.shardPercent + '%' }} />
+                </div>
+                <div className="mt-1 text-[10px] text-faint">已合成 {dex.maps} 张 · 已开启 {dex.opened} 处 · 章节 {dex.chaptersClaimed}/{dex.chaptersTotal}</div>
+              </div>
+
+              {/* 章节首发 */}
+              <div className="mt-3 text-[11px] font-semibold text-content">章节首发（每章一次）</div>
+              <div className="mt-1.5 grid grid-cols-5 gap-1.5">
+                {Object.keys(CHAPTER_SHARDS).map((k) => {
+                  const ch = Number(k);
+                  const claimed = treasure.claimedChapters.includes(ch);
+                  return (
+                    <button
+                      key={ch}
+                      type="button"
+                      disabled={claimed}
+                      onClick={() => claimTreasureChapter(ch)}
+                      className="rounded-lg border border-line px-1 py-1.5 text-[10px] text-muted hover:text-content disabled:opacity-40"
+                    >
+                      第{ch}章<br />{claimed ? '已领' : '+' + CHAPTER_SHARDS[ch]}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* 合成与开启 */}
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  onClick={craftTreasureMaps}
+                  disabled={treasure.shards < SHARD_PER_MAP}
+                  className="flex-1 rounded-lg border border-warning/50 bg-warning/10 px-2 py-2 text-[11px] font-semibold text-warning disabled:opacity-40"
+                >
+                  拼合藏宝图（需 {SHARD_PER_MAP}）
+                </button>
+                <button
+                  type="button"
+                  onClick={openTreasureMap}
+                  disabled={!nextTier}
+                  className="flex-1 rounded-lg border border-accent/50 bg-accent/10 px-2 py-2 text-[11px] font-semibold text-accent disabled:opacity-40"
+                >
+                  {nextDef ? '按图寻宝' : '暂无藏宝图'}
+                </button>
+              </div>
+              {nextDef && (
+                <p className="mt-1.5 text-[10px] leading-relaxed text-faint">
+                  《{nextDef.name}》{nextDef.desc}（需 {nextDef.minLevel} 级{nextDef.skill ? '、' + (nextDef.skill.key === 'herb' ? '采药' : nextDef.skill.key === 'mine' ? '采矿' : '炼丹') + ' Lv.' + nextDef.skill.level : ''}）
+                </p>
+              )}
+
+              {/* 图鉴 */}
+              <div className="mt-3 text-[11px] font-semibold text-content">秘藏图鉴</div>
+              <div className="mt-1.5 space-y-1">
+                {TREASURE_TIERS.map((t) => {
+                  const got = treasure.opened.filter((o) => o.startsWith(t.tier + '-')).length;
+                  return (
+                    <div key={t.tier} className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 ${t.color}`}>
+                      <span className="w-5 shrink-0 text-center text-[10px] font-bold">{t.tier}</span>
+                      <span className="flex-1 truncate text-[11px]">{t.name}</span>
+                      <span className="shrink-0 text-[10px] opacity-75">{got > 0 ? '已开启 ' + got : '未发现'}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ════ 武学面板：秘籍 + 内功（D/C/B/A/S） ════ */}
       {panel === 'martial' && hero && (
