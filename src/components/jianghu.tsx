@@ -254,6 +254,19 @@ const SCENES: Record<string, { url: string; label: string }> = {
   },
 };
 
+/** 过场影像：按节点挂载本地 mp4，仅在点击时加载（preload=none），不拖慢首屏 */
+const NODE_VIDEO: Record<string, { src: string; title: string }> = {
+  'o-noble': { src: '/game/videos/trailer-1-luoyang.mp4', title: '洛阳残雪' },
+  'o-orphan': { src: '/game/videos/trailer-1-luoyang.mp4', title: '青牛村雪' },
+  'o-escort': { src: '/game/videos/trailer-1-luoyang.mp4', title: '威远镖旗' },
+  a04: { src: '/game/videos/trailer-2-lantern.mp4', title: '上元灯市' },
+  a07: { src: '/game/videos/trailer-6-peak.mp4', title: '夜袭黑风寨' },
+  b01: { src: '/game/videos/trailer-3-jiangnan.mp4', title: '群雄帖' },
+  c05: { src: '/game/videos/trailer-5-huashan.mp4', title: '绝顶决战' },
+  c08: { src: '/game/videos/trailer-5-huashan.mp4', title: '华山论剑' },
+  d07: { src: '/game/videos/trailer-6-peak.mp4', title: '地宫终局' },
+};
+
 /** 节点 → 场景图 */
 const NODE_SCENE: Record<string, string> = {
   'o-noble': 'luoyang-snow', 'o-orphan': 'village', 'o-escort': 'stronghold',
@@ -284,10 +297,9 @@ const PORTRAITS: Record<string, string> = {
   独眼掌柜: '/game/portraits/duyan.webp',
   青城弟子: '/game/portraits/qingcheng.webp',
   魔教护法: '/game/portraits/mofu.webp',
-  // 第五章边关线：暂用风格相近的现有立绘占位（额度恢复后换专属立绘）
-  鞑靼千夫长: '/game/portraits/heita.webp',
-  黑心粮官: '/game/portraits/duyan.webp',
-  镇北侯: '/game/portraits/yinwujiu.webp',
+  鞑靼千夫长: '/game/portraits/tatarchief.webp',
+  黑心粮官: '/game/portraits/liangguan.webp',
+  镇北侯: '/game/portraits/zhenbei.webp',
 };
 
 // ──────────────────────────── 流派（拳 / 剑 / 刀） ────────────────────────────
@@ -1702,6 +1714,7 @@ export function JianghuGame() {
   const [endingKey, setEndingKey] = useState<EndingKey | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [showLog, setShowLog] = useState(false);
+  const [videoOpen, setVideoOpen] = useState<{ src: string; title: string } | null>(null);
   const [panel, setPanel] = useState<null | 'martial' | 'town' | 'bag' | 'quest' | 'sect' | 'meridian'>(null);
   const [cleared, setCleared] = useState<string[]>([]);
   const [questProgress, setQuestProgress] = useState<QuestProgress>({});
@@ -3296,6 +3309,15 @@ export function JianghuGame() {
             <div className="absolute left-3 top-3 rounded-md bg-black/45 px-2 py-1 text-[10px] text-white/85">
               {CHAPTER_LABELS[node.chapter]}
             </div>
+            {NODE_VIDEO[node.id] && (
+              <button
+                type="button"
+                onClick={() => setVideoOpen(NODE_VIDEO[node.id])}
+                className="absolute right-3 top-3 flex items-center gap-1 rounded-md bg-black/55 px-2 py-1 text-[10px] font-semibold text-white/90 backdrop-blur-sm transition hover:bg-black/80"
+              >
+                ▶ 过场影像
+              </button>
+            )}
             <div className="absolute bottom-3 left-4">
               <div className="text-lg font-bold text-white drop-shadow-lg sm:text-2xl">{node.title}</div>
               <div className="text-[10px] text-white/70">{scene.label}</div>
@@ -3993,6 +4015,40 @@ export function JianghuGame() {
             <p className="mt-3 text-[10px] leading-relaxed text-faint">
               ※ 装备只按槽位生效：兵器加战力、护甲减伤；词条为暴击 / 吸血 / 速度；药品在战斗中按瓶消耗。草药可在上方炼丹，烧刀子只在游戏内转化为酒量 ※
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* ════ 过场影像（本地 mp4，按需加载） ════ */}
+      {videoOpen && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/92 p-3 backdrop-blur-sm"
+          onClick={() => setVideoOpen(null)}
+        >
+          <div className="w-full max-w-3xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div className="truncate text-sm font-semibold text-white">过场 · {videoOpen.title}</div>
+              <button
+                type="button"
+                onClick={() => setVideoOpen(null)}
+                className="shrink-0 rounded-lg border border-white/25 px-3 py-1 text-xs text-white/85 hover:bg-white/10"
+              >
+                关闭
+              </button>
+            </div>
+            <video
+              key={videoOpen.src}
+              src={videoOpen.src}
+              controls
+              autoPlay
+              playsInline
+              preload="none"
+              poster={sceneArt(sceneKey)}
+              className="w-full rounded-xl border border-white/15 shadow-2xl"
+            />
+            <div className="mt-2 text-center text-[10px] text-white/45">
+              影像为本地文件，首次播放需要加载；关闭后可继续剧情
+            </div>
           </div>
         </div>
       )}

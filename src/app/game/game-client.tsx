@@ -631,9 +631,19 @@ function GameCard({ game, onOpen }: { game: GameDef; onOpen: () => void }) {
   );
 }
 
+/** 官方宣传片（本地 mp4，点击才加载） */
+const TRAILERS = [
+  { key: 'luoyang', title: '洛阳残雪', src: '/game/videos/trailer-1-luoyang.mp4', poster: '/game/scenes/luoyang-snow.webp' },
+  { key: 'lantern', title: '上元灯市', src: '/game/videos/trailer-2-lantern.mp4', poster: '/game/scenes/lantern.webp' },
+  { key: 'jiangnan', title: '江南水乡', src: '/game/videos/trailer-3-jiangnan.mp4', poster: '/game/scenes/jiangnan.webp' },
+  { key: 'huashan', title: '华山论剑', src: '/game/videos/trailer-5-huashan.mp4', poster: '/game/scenes/huashan.webp' },
+  { key: 'peak', title: '断魂崖', src: '/game/videos/trailer-6-peak.mp4', poster: '/game/scenes/peak.webp' },
+];
+
 const PORTAL_LINKS: { label: string; section?: string }[] = [
   { label: '门户首页' },
   { label: '游戏库', section: 'game-library' },
+  { label: '宣传片', section: 'trailers' },
   { label: '排行榜', section: 'rank' },
   { label: '攻略', section: 'guides' },
   { label: '礼包', section: 'gifts' },
@@ -830,6 +840,20 @@ export default function GameClient() {
     if (id === 'jianghu') refreshJhSave();
   };
 
+  const [trailerIdx, setTrailerIdx] = useState<number | null>(null);
+  const [trailerSlide, setTrailerSlide] = useState(0);
+  const [trailerPaused, setTrailerPaused] = useState(false);
+
+  // 宣传片自动轮播：悬停暂停、打开播放器时暂停、尊重「减少动态效果」
+  useEffect(() => {
+    if (trailerPaused || trailerIdx !== null) return;
+    if (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const timer = window.setInterval(() => {
+      setTrailerSlide((i) => (i + 1) % TRAILERS.length);
+    }, 6000);
+    return () => window.clearInterval(timer);
+  }, [trailerPaused, trailerIdx]);
+
   const goPortal = (section?: string) => {
     setView('portal');
     if (!section) {
@@ -989,6 +1013,135 @@ export default function GameClient() {
             ))}
           </div>
         </section>
+      )}
+
+      {/* 官方宣传片 */}
+      <section id="trailers" className="mt-5 scroll-mt-32">
+        <SectionTitle>🎬 官方宣传片</SectionTitle>
+        <div
+          className="relative overflow-hidden rounded-2xl border border-line bg-black"
+          onMouseEnter={() => setTrailerPaused(true)}
+          onMouseLeave={() => setTrailerPaused(false)}
+          role="region"
+          aria-label="官方宣传片轮播"
+        >
+          {/* 主画面 */}
+          <button
+            type="button"
+            onClick={() => setTrailerIdx(trailerSlide)}
+            className="group relative block aspect-[16/10] w-full sm:aspect-[21/9]"
+          >
+            <img
+              key={TRAILERS[trailerSlide].key}
+              src={TRAILERS[trailerSlide].poster}
+              alt={TRAILERS[trailerSlide].title}
+              className="h-full w-full object-cover transition-transform duration-[6000ms] ease-linear group-hover:scale-[1.03]"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-black/10" />
+            <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 p-3 sm:p-6">
+              <div className="min-w-0 text-left">
+                <div className="text-[10px] uppercase tracking-[0.2em] text-white/55">
+                  官方宣传片 · {trailerSlide + 1}/{TRAILERS.length}
+                </div>
+                <div className="mt-1 truncate text-xl font-bold text-white drop-shadow sm:text-3xl">
+                  {TRAILERS[trailerSlide].title}
+                </div>
+              </div>
+              <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-white/95 px-3 py-1.5 text-[11px] font-bold text-black shadow-lg transition-transform group-hover:scale-105 sm:px-4 sm:text-xs">
+                ▶ 播放
+              </span>
+            </div>
+          </button>
+
+          {/* 左右箭头 */}
+          <button
+            type="button"
+            aria-label="上一张"
+            onClick={(e) => {
+              e.stopPropagation();
+              setTrailerSlide((i) => (i - 1 + TRAILERS.length) % TRAILERS.length);
+            }}
+            className="absolute left-2 top-1/2 hidden -translate-y-1/2 rounded-full bg-black/45 px-2.5 py-2 text-sm text-white/85 backdrop-blur-sm transition hover:bg-black/75 sm:block"
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            aria-label="下一张"
+            onClick={(e) => {
+              e.stopPropagation();
+              setTrailerSlide((i) => (i + 1) % TRAILERS.length);
+            }}
+            className="absolute right-2 top-1/2 hidden -translate-y-1/2 rounded-full bg-black/45 px-2.5 py-2 text-sm text-white/85 backdrop-blur-sm transition hover:bg-black/75 sm:block"
+          >
+            ›
+          </button>
+
+          {/* 指示点 */}
+          <div className="absolute right-3 top-3 flex gap-1.5">
+            {TRAILERS.map((t, idx) => (
+              <button
+                key={t.key}
+                type="button"
+                aria-label={`第 ${idx + 1} 张：${t.title}`}
+                onClick={() => setTrailerSlide(idx)}
+                className={`h-1.5 rounded-full transition-all ${
+                  idx === trailerSlide ? "w-5 bg-white" : "w-1.5 bg-white/45 hover:bg-white/70"
+                }`}
+              />
+            ))}
+          </div>
+
+          {/* 缩略图条 */}
+          <div className="flex gap-2 overflow-x-auto border-t border-white/10 bg-black/70 p-2">
+            {TRAILERS.map((t, idx) => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setTrailerSlide(idx)}
+                className={`relative aspect-video w-24 shrink-0 overflow-hidden rounded-md border transition sm:w-32 ${
+                  idx === trailerSlide ? "border-[#FF5A00] opacity-100" : "border-white/15 opacity-60 hover:opacity-90"
+                }`}
+              >
+                <img src={t.poster} alt={t.title} loading="lazy" className="h-full w-full object-cover" />
+                <span className="absolute inset-x-0 bottom-0 truncate bg-black/55 px-1 py-0.5 text-[9px] text-white/90">
+                  {t.title}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* 宣传片播放弹层 */}
+      {trailerIdx !== null && TRAILERS[trailerIdx] && (
+        <div
+          className="fixed inset-0 z-[90] flex items-center justify-center bg-black/92 p-3 backdrop-blur-sm"
+          onClick={() => setTrailerIdx(null)}
+        >
+          <div className="w-full max-w-4xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div className="truncate text-sm font-semibold text-white">宣传片 · {TRAILERS[trailerIdx].title}</div>
+              <button
+                type="button"
+                onClick={() => setTrailerIdx(null)}
+                className="shrink-0 rounded-lg border border-white/25 px-3 py-1 text-xs text-white/85 hover:bg-white/10"
+              >
+                关闭
+              </button>
+            </div>
+            <video
+              key={TRAILERS[trailerIdx].src}
+              src={TRAILERS[trailerIdx].src}
+              poster={TRAILERS[trailerIdx].poster}
+              controls
+              autoPlay
+              playsInline
+              preload="none"
+              className="w-full rounded-xl border border-white/15 shadow-2xl"
+            />
+          </div>
+        </div>
       )}
 
       <section className="mt-5 grid gap-4 lg:grid-cols-[170px_minmax(0,1fr)] xl:grid-cols-[180px_minmax(0,1fr)_288px]">
