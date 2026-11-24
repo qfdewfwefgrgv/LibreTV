@@ -11,6 +11,21 @@ import type { QuestDef } from './quests-ext';
 
 export const STORY_QUESTS: QuestDef[] = [
   {
+    id: 'q-shandao',
+    title: '山道救孤',
+    kind: '链式',
+    scene: 'stronghold',
+    minLevel: 2,
+    tag: '同伴招募',
+    desc:
+      '洛阳城外的山道上，一名青衣人被困在乱石间，身上插着两支断箭还撑着不肯倒。围攻她的山贼说，这人不该管闲事。',
+    steps: [
+      { id: 'fight', hint: '出手击退围攻的山贼（触发战斗）', action: 'fight' },
+      { id: 'escort', hint: '把伤者护送回洛阳（触发交付）', action: 'deliver' },
+    ],
+    reward: { exp: 90, silver: 40, contribution: 5, items: ['金创药'] },
+  },
+  {
     id: 'q-sevenleaf',
     title: '救命的七叶草',
     kind: '链式',

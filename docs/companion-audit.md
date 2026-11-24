@@ -158,3 +158,46 @@ type SaveData = {
 3. **同伴立绘**：是复用现有立绘，还是让 Muse/Ark 新出一张沈青衣？（Ark 账户当前欠费，Muse 队列拥堵，出图可能延迟）
 
 确认后我按 B1→B6 顺序推进，每步给修改文件清单与测试证据。
+
+
+---
+
+# 阶段 B 实施记录（已完成）
+
+## 修改文件清单
+
+| 文件 | 改动 |
+|---|---|
+| `src/components/jianghu/companions.ts`（新增） | 15 名同伴设定、`CompanionState`、招募/上阵/好感/归一化、`guardIntercept` 纯函数 |
+| `src/components/jianghu/companions.test.ts`（新增） | 11 个单元测试 |
+| `src/components/jianghu/quests-story.ts` | 新增招募链 `q-shandao`「山道救孤」（战斗 → 护送交付） |
+| `src/components/jianghu.tsx` | `SaveData.companions`、状态、写档/读档/重开；`startBattle` 重置挡刃标记；敌方回合接入「以身挡刃」；领取「山道救孤」奖励时招募沈青衣；同行录面板与侧栏入口 |
+
+## 已实现机制
+
+1. **招募**：完成「山道救孤」（战斗 → 护送）后，沈青衣入队并自动上阵，日志提示。
+2. **以身挡刃**：每场战斗**首次**被打到 0 血时，她代受 30%，玩家承担 70%，战斗日志显示「沈青衣以身挡刃，替你挡下 X 点」。
+3. **同行录**：侧栏「同伴」入口，显示 15 人；已结识者显示被动与好感，未结识显示招募方式；标注「机制已实装」。
+4. **存档**：`companions` 写入存档，旧存档缺字段走 `normalizeCompanions` 默认值，非法数据被清洗。
+
+## 测试证据
+
+```
+npx tsc --noEmit      0 error
+npm run build         ✓ Compiled successfully in 4.9s
+npx vitest run        39 files / 475 tests passed
+  ✓ companions.test.ts (11 tests)
+    - 招募入册并自动上阵 / 重复招募不覆盖 / 未知 id 无效
+    - 旧存档兜底 + active 过滤幽灵 id / 好感夹在 0~100
+    - 非致命不触发 / 致命首次代受 30% / 同战只触发一次 / 未上阵不触发 / 伤害 0 与刚好打空血边界
+    - 15 名同伴 id 唯一，仅沈青衣标记已实现
+```
+
+## 本版明确未做
+
+- 3 人编队、同伴独立行动条、AI 指令
+- 好感事件链、羁绊组合
+- 地图跟随
+- 柳红绡性别克制（需先给 `EnemyDef` 加 `tags`）
+- 百里神机自动服药、萧烈燃血（需可注入 `rng` 与生命消耗结算规则）
+- 除沈青衣外 14 名同伴的机制

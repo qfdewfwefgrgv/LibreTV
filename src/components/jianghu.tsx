@@ -45,6 +45,16 @@ import {
   type TreasureState,
 } from '@/components/jianghu/treasure';
 import {
+  COMPANIONS,
+  companionActive,
+  companionJoined,
+  defaultCompanions,
+  guardIntercept,
+  normalizeCompanions,
+  recruitCompanion,
+  type CompanionState,
+} from '@/components/jianghu/companions';
+import {
   PRISONERS,
   SHARD_RECIPES,
   canChallenge,
@@ -604,6 +614,8 @@ type SaveData = {
   treasure?: TreasureState;
   /** 天牢进度 */
   prison?: PrisonState;
+  /** 同伴名册 */
+  companions?: CompanionState;
 };
 
 type PendingGiftReward = {
@@ -1834,11 +1846,13 @@ export function JianghuGame() {
 
   const [typedLen, setTypedLen] = useState(0);
   const [typingDone, setTypingDone] = useState(false);
-  const [panel, setPanel] = useState<null | 'martial' | 'town' | 'bag' | 'quest' | 'sect' | 'meridian' | 'treasure' | 'prison'>(null);
+  const [panel, setPanel] = useState<null | 'martial' | 'town' | 'bag' | 'quest' | 'sect' | 'meridian' | 'treasure' | 'prison' | 'companions'>(null);
   const [cleared, setCleared] = useState<string[]>([]);
   const [questProgress, setQuestProgress] = useState<QuestProgress>({});
   const [treasure, setTreasure] = useState<TreasureState>(defaultTreasure());
   const [prison, setPrison] = useState<PrisonState>(defaultPrison());
+  const [companions, setCompanions] = useState<CompanionState>(defaultCompanions());
+  const guardUsedRef = useRef(false);
   const [activeQuestId, setActiveQuestId] = useState<string | null>(null);
   const [saveData, setSaveData] = useState<SaveData | null>(null);
   /** 读档时算出的离线挂机收益，供开局界面展示 */
@@ -1903,6 +1917,7 @@ export function JianghuGame() {
         if (data.activeQuestId) setActiveQuestId(data.activeQuestId);
       setTreasure(normalizeTreasure(data.treasure));
       setPrison(refreshDaily(normalizePrison(data.prison)));
+      setCompanions(normalizeCompanions(data.companions));
       }
     } catch {
       // 存档损坏或不可读时当作没有存档
@@ -1925,13 +1940,14 @@ export function JianghuGame() {
       activeQuestId,
       treasure,
       prison,
+      companions,
     };
     try {
       window.localStorage.setItem(SAVE_KEY, JSON.stringify(data));
     } catch {
       // 存储不可用时静默跳过
     }
-  }, [phase, hero, nodeId, cleared, battle, playerName, avatarKey, originKey, questProgress, activeQuestId, treasure, prison]);
+  }, [phase, hero, nodeId, cleared, battle, playerName, avatarKey, originKey, questProgress, activeQuestId, treasure, prison, companions]);
 
   // 走到结局即清档，避免读档回到结局前一幕
   useEffect(() => {
@@ -1983,6 +1999,7 @@ export function JianghuGame() {
     setQuestProgress({});
     setTreasure(defaultTreasure());
     setPrison(defaultPrison());
+    setCompanions(defaultCompanions());
     setActiveQuestId(null);
     travelCount.current = 0;
     logSeq.current = 2 + gifted.lines.length;
@@ -2283,6 +2300,7 @@ export function JianghuGame() {
     const enemyDef = ENEMIES[combat.enemy] ?? ENEMIES['血手堂杀手'];
     const enemyMaxHp = Math.round(enemyDef.hpBase + combat.difficulty * enemyDef.hpPerDiff);
     battleSeq.current = 0;
+    guardUsedRef.current = false;
     const isBoss = BOSS_NAMES.has(enemyDef.name);
     setBattle({
       combat,
@@ -2452,6 +2470,13 @@ export function JianghuGame() {
           const rem = Array.from({ length: 5 }, () => '草药');
           setHero(grantQuestReward(q, applyEffects(hero, { removeItems: rem })));
           return;
+        }
+        if (q.id === 'q-shandao') {
+          const r = recruitCompanion(companions, 'shen-qingyi');
+          if (r.recruited) {
+            setCompanions(r.state);
+            pushLog(`【同伴】${r.name} 抱拳道：「这条命是你救的，往后我随你走。」`, 'win');
+          }
         }
         setHero(grantQuestReward(q, hero));
         return;
@@ -3035,7 +3060,15 @@ export function JianghuGame() {
       const backLine = strikeText('enemy', enemyDef.name, enemyDef.school, back);
       pushBattleLine(backLine.text, backLine.tone);
       addFx([fxFrom('player', back)]);
-      playerHp = Math.max(0, playerHp - back.dmg);
+      const guard = guardIntercept(back.dmg, playerHp, {
+        hasShen: companionActive(companions, 'shen-qingyi'),
+        usedThisBattle: guardUsedRef.current,
+      });
+      if (guard.triggered) {
+        guardUsedRef.current = true;
+        pushBattleLine(`沈青衣以身挡刃，替你挡下 ${guard.absorbed} 点。`, 'event');
+      }
+      playerHp = Math.max(0, playerHp - guard.damage);
       if (playerHp <= 0) {
         pushBattleLine('【败】你眼前一黑，倒了下去。', 'lose');
         finish('lose');
@@ -3596,6 +3629,9 @@ export function JianghuGame() {
               <button type="button" onClick={() => setPanel('prison')} className="rounded-md border border-danger/50 bg-danger/10 px-2 py-1 text-[10px] text-danger hover:bg-danger/20">
                 天牢
               </button>
+              <button type="button" onClick={() => setPanel('companions')} className="rounded-md border border-success/50 bg-success/10 px-2 py-1 text-[10px] text-success hover:bg-success/20">
+                同伴
+              </button>
               <button type="button" onClick={() => setWorldOpen(true)} className="rounded-md border border-accent/50 bg-accent/10 px-2 py-1 text-[10px] text-accent hover:bg-accent/20">
                 世界
               </button>
@@ -3764,6 +3800,58 @@ export function JianghuGame() {
             <button type="button" onClick={restart} className="text-xs text-faint hover:text-content">
               ↻ 重开一局
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ════ 同行录 ════ */}
+      {panel === 'companions' && hero && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm" onClick={() => setPanel(null)}>
+          <div className="max-h-[86vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-line bg-surface p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-2 flex items-center justify-between">
+              <div className="text-sm font-bold text-content">🤝 同行录</div>
+              <button type="button" onClick={() => setPanel(null)} className="rounded-md border border-line px-2 py-1 text-[10px] text-muted hover:text-content">关闭</button>
+            </div>
+            <div className="text-[10px] text-faint">
+              已结识 {Object.keys(companions.roster).length}/{COMPANIONS.length} 人 · 上阵 {companions.active.length}
+            </div>
+
+            <div className="mt-2 space-y-1.5">
+              {COMPANIONS.map((c) => {
+                const joined = companionJoined(companions, c.id);
+                const active = companionActive(companions, c.id);
+                const aff = companions.roster[c.id]?.affinity ?? 0;
+                return (
+                  <div key={c.id} className={`rounded-lg border p-2 ${active ? 'border-accent/50 bg-accent/5' : joined ? 'border-line' : 'border-line/50 opacity-70'}`}>
+                    <div className="flex items-start gap-2">
+                      <div className="h-12 w-10 shrink-0 overflow-hidden rounded border border-line bg-surface-raised">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={c.portrait}
+                          alt={c.name}
+                          loading="lazy"
+                          className="h-full w-full object-cover"
+                          onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                        />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[12px] font-semibold text-content">
+                          {c.name}
+                          <span className="ml-1 text-[10px] font-normal text-accent">{c.role}</span>
+                          {active && <span className="ml-1 text-[9px] text-success">上阵</span>}
+                          {c.implemented && <span className="ml-1 text-[9px] text-warning">机制已实装</span>}
+                        </div>
+                        <p className="text-[10px] leading-snug text-faint">{joined ? c.passive : c.source}</p>
+                        {joined && <div className="text-[10px] text-muted">好感 {aff}</div>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-[10px] leading-relaxed text-faint">
+              ※ 本版只有沈青衣的「以身挡刃」真正生效（每战首次致命伤代受 30%）；其余同伴为设定登记，机制在后续阶段逐个实装 ※
+            </p>
           </div>
         </div>
       )}
