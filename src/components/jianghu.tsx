@@ -150,6 +150,17 @@ type Origin = {
 const img = (prompt: string, size: 'square' | 'landscape_16_9') =>
   `https://trae-api-cn.mchost.guru/api/ide/v1/tool_text_to_image?prompt=${encodeURIComponent(prompt)}&image_size=${size}`;
 
+/** 场景背景：优先真实美术 public/game/scenes/<key>.webp，缺图时回落到同名 SVG 意境图。
+ *  线上没有 Trae 鉴权，远端文生图接口必然 401，故完全不再依赖它。 */
+const sceneArt = (key: string) => `/game/scenes/${key}.webp`;
+const sceneArtFallback = (key: string) => `/game/scenes/${key}.svg`;
+const onSceneArtError = (key: string) => (e: React.SyntheticEvent<HTMLImageElement>) => {
+  const el = e.currentTarget;
+  if (el.dataset.fallback === '1') return;
+  el.dataset.fallback = '1';
+  el.src = sceneArtFallback(key);
+};
+
 /** 场景图：水墨武侠风横版场景（实物背景） */
 const SCENES: Record<string, { url: string; label: string }> = {
   'luoyang-snow': {
@@ -3231,20 +3242,20 @@ export function JianghuGame() {
           {/* 场景图（实物） */}
           <div className="relative mb-3 overflow-hidden rounded-xl border border-line">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img key={scene.url} src={scene.url} alt={scene.label} loading="lazy" className="h-40 w-full object-cover sm:h-56" />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent" />
+            <img key={sceneKey} src={sceneArt(sceneKey)} onError={onSceneArtError(sceneKey)} alt={scene.label} loading="lazy" className="h-48 w-full object-cover transition-transform duration-700 sm:h-72" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-black/30" />
             <div className="absolute left-3 top-3 rounded-md bg-black/45 px-2 py-1 text-[10px] text-white/85">
               {CHAPTER_LABELS[node.chapter]}
             </div>
             <div className="absolute bottom-3 left-4">
-              <div className="text-lg font-bold text-white">{node.title}</div>
-              <div className="text-[10px] text-white/60">{scene.label}</div>
+              <div className="text-lg font-bold text-white drop-shadow-lg sm:text-2xl">{node.title}</div>
+              <div className="text-[10px] text-white/70">{scene.label}</div>
             </div>
             {/* 剧情人物人头：苏挽出场的节点显示 NPC 头像 */}
             {['a05', 'b06', 'b07', 'c04', 'c06'].includes(node.id) && (
               <div className="absolute bottom-3 right-4 flex flex-col items-center gap-1">
-                <Portrait name="苏挽" size={44} ring="border-white/40" />
-                <span className="rounded bg-black/50 px-1.5 py-0.5 text-[9px] text-white/85">苏挽</span>
+                <Portrait name="苏挽" size={64} ring="border-white/50" />
+                <span className="rounded bg-black/55 px-1.5 py-0.5 text-[9px] text-white/85">苏挽</span>
               </div>
             )}
           </div>
@@ -3946,9 +3957,9 @@ export function JianghuGame() {
             }`}
           >
             {/* 战斗场景横幅 */}
-            <div className="relative h-24 shrink-0 sm:h-32">
+            <div className="relative h-32 shrink-0 sm:h-44">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={scene.url} alt={scene.label} className="h-full w-full object-cover" />
+              <img src={sceneArt(sceneKey)} onError={onSceneArtError(sceneKey)} alt={scene.label} className="h-full w-full object-cover" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent" />
               <div className="absolute bottom-2 left-3 text-[11px] font-semibold text-white">
                 ⚔️ 激战 · {scene.label}
@@ -3974,7 +3985,7 @@ export function JianghuGame() {
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <div className="relative">
-                    <Portrait name={avatarKey} size={56} ring="border-accent/60" />
+                    <Portrait name={avatarKey} size={72} ring="border-accent/60" />
                     {lastPlayerFx && lastPlayerFx.tone !== 'heal' && (
                       <span key={`pf-${lastPlayerFx.id}`} className="jh-flash pointer-events-none absolute inset-0 rounded-full bg-white" />
                     )}
@@ -4016,7 +4027,7 @@ export function JianghuGame() {
                     </div>
                   </div>
                   <div className="relative">
-                    <Portrait name={battle.enemyDef.name} size={56} ring="border-danger/60" />
+                    <Portrait name={battle.enemyDef.name} size={72} ring="border-danger/60" />
                     {lastEnemyFx && lastEnemyFx.tone !== 'heal' && (
                       <span key={`ef-${lastEnemyFx.id}`} className="jh-flash pointer-events-none absolute inset-0 rounded-full bg-white" />
                     )}

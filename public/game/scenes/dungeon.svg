@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" role="img">
+<defs>
+<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#0e0a12"/><stop offset="0.5" stop-color="#281a30"/><stop offset="1" stop-color="#5b4058"/>
+</linearGradient>
+<linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#5b4058" stop-opacity="0.55"/><stop offset="1" stop-color="#05080b" stop-opacity="0.85"/>
+</linearGradient>
+<radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+<stop offset="0" stop-color="#c9a0d8" stop-opacity="0.9"/><stop offset="0.5" stop-color="#c9a0d8" stop-opacity="0.22"/><stop offset="1" stop-color="#c9a0d8" stop-opacity="0"/>
+</radialGradient>
+<filter id="soft" x="-30%" y="-60%" width="160%" height="220%"><feGaussianBlur stdDeviation="30"/></filter>
+<filter id="glowSm" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="8"/></filter>
+<filter id="rough" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.012 0.03" numOctaves="3" seed="7" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="26" xChannelSelector="R" yChannelSelector="G"/></filter>
+<filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="linear" slope="0.05"/></feComponentTransfer></filter>
+<linearGradient id="vig" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#000" stop-opacity="0.5"/><stop offset="0.4" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.68"/>
+</linearGradient>
+</defs>
+<rect width="1600" height="900" fill="url(#sky)"/>
+<ellipse cx="889.2" cy="206.8" rx="432.4" ry="77.8" fill="#ffffff" opacity="0.045" filter="url(#soft)"/><ellipse cx="612.6" cy="283" rx="192.7" ry="34.7" fill="#ffffff" opacity="0.057" filter="url(#soft)"/><ellipse cx="278.1" cy="257.3" rx="275.9" ry="49.7" fill="#ffffff" opacity="0.077" filter="url(#soft)"/><ellipse cx="1152.7" cy="96.7" rx="420.6" ry="75.7" fill="#ffffff" opacity="0.044" filter="url(#soft)"/><ellipse cx="728.5" cy="299.3" rx="354" ry="63.7" fill="#ffffff" opacity="0.085" filter="url(#soft)"/>
+<circle cx="#c9a0d8" cy="960" r="650" fill="url(#glow)"/>
+<circle cx="#c9a0d8" cy="960" r="75" fill="#c9a0d8" opacity="0.92"/>
+<path d="M 716.5 222.6 Q 720.5 217.7 724.6 222.6 Q 728.7 217.7 732.7 222.6" fill="none" stroke="#0b1014" stroke-width="1.6" opacity="0.35"/><path d="M 1147.7 151.9 Q 1151 147.9 1154.3 151.9 Q 1157.6 147.9 1160.8 151.9" fill="none" stroke="#0b1014" stroke-width="1.6" opacity="0.35"/><path d="M 212.9 140.1 Q 215.4 137 218 140.1 Q 220.6 137 223.1 140.1" fill="none" stroke="#0b1014" stroke-width="1.6" opacity="0.35"/><path d="M 1191.4 263.4 Q 1194.3 259.8 1197.3 263.4 Q 1200.2 259.8 1203.2 263.4" fill="none" stroke="#0b1014" stroke-width="1.6" opacity="0.35"/><path d="M 519.9 211.4 Q 524.3 206.1 528.8 211.4 Q 533.3 206.1 537.7 211.4" fill="none" stroke="#0b1014" stroke-width="1.6" opacity="0.35"/>
+<path d="M -80 380 Q -168 240.5 -80 239.4 Q 8 243.3 96 330.7 Q 184 328.2 272 188.2 Q 360 287.4 448 280.7 Q 536 288.1 624 265.2 Q 712 276.4 800 313.7 Q 888 330.3 976 269.5 Q 1064 331.4 1152 297 Q 1240 314.8 1328 188 Q 1416 262.6 1504 343.9 Q 1592 300.2 1680 245.5 L 1680 980 L -80 980 Z" fill="#5b4058" opacity="0.35" filter="url(#rough)"/>
+<path d="M -80 470 Q -168 355.7 -80 401.3 Q 8 442.2 96 385.2 Q 184 370 272 311.7 Q 360 424 448 378.9 Q 536 352.9 624 389.6 Q 712 418.8 800 408.4 Q 888 443.1 976 303.2 Q 1064 424.4 1152 409.7 Q 1240 407.8 1328 353.8 Q 1416 419.4 1504 401.3 Q 1592 426.1 1680 301.9 L 1680 980 L -80 980 Z" fill="#281a30" opacity="0.55" filter="url(#rough)"/>
+
+<path d="M -80 560 Q -168 489.9 -80 493.8 Q 8 499.7 96 511.9 Q 184 515 272 516.1 Q 360 504.9 448 534 Q 536 520.1 624 476.1 Q 712 512.6 800 525 Q 888 500 976 467.1 Q 1064 526 1152 490.2 Q 1240 513.5 1328 503.7 Q 1416 512.4 1504 521.2 Q 1592 526.8 1680 455.9 L 1680 980 L -80 980 Z" fill="#281a30" opacity="0.75" filter="url(#rough)"/>
+<rect width="1600" height="900" fill="rgba(6,10,14,0.55)" opacity="0.25"/>
+<rect x="-40" y="600" width="1680" height="340" fill="#151d26"/><rect x="0" y="556" width="64" height="46" fill="#151d26"/><rect x="104" y="556" width="64" height="46" fill="#151d26"/><rect x="208" y="556" width="64" height="46" fill="#151d26"/><rect x="312" y="556" width="64" height="46" fill="#151d26"/><rect x="416" y="556" width="64" height="46" fill="#151d26"/><rect x="520" y="556" width="64" height="46" fill="#151d26"/><rect x="624" y="556" width="64" height="46" fill="#151d26"/><rect x="728" y="556" width="64" height="46" fill="#151d26"/><rect x="832" y="556" width="64" height="46" fill="#151d26"/><rect x="936" y="556" width="64" height="46" fill="#151d26"/><rect x="1040" y="556" width="64" height="46" fill="#151d26"/><rect x="1144" y="556" width="64" height="46" fill="#151d26"/><rect x="1248" y="556" width="64" height="46" fill="#151d26"/><rect x="1352" y="556" width="64" height="46" fill="#151d26"/><rect x="1456" y="556" width="64" height="46" fill="#151d26"/><rect x="1560" y="556" width="64" height="46" fill="#151d26"/><path d="M 700 900 L 700 720 Q 800 640 900 720 L 900 900 Z" fill="#05070a" opacity="0.92"/><path d="M 590 540 L 1010 540 L 942.8 494 L 657.2 494 Z" fill="#151d26"/><rect x="648.8" y="540" width="302.4" height="58" fill="#151d26"/><path d="M 650 444 L 950 444 L 902 398 L 698 398 Z" fill="#151d26"/><rect x="692" y="444" width="216" height="58" fill="#151d26"/><rect x="650" y="554" width="16" height="22" fill="#ffca7a" opacity="0.66"/><rect x="700" y="554" width="16" height="22" fill="#ffca7a" opacity="0.38"/><rect x="750" y="554" width="16" height="22" fill="#ffca7a" opacity="0.39"/><rect x="800" y="554" width="16" height="22" fill="#ffca7a" opacity="0.52"/><rect x="850" y="554" width="16" height="22" fill="#ffca7a" opacity="0.59"/><rect x="900" y="554" width="16" height="22" fill="#ffca7a" opacity="0.53"/><rect x="950" y="554" width="16" height="22" fill="#ffca7a" opacity="0.73"/><rect x="736.4" y="570" width="8" height="374.1" fill="#151d26"/><path d="M 744.4 570 L 814.4 580 L 812.4 650 L 744.4 638 Z" fill="#7a1f1f" opacity="0.75"/><rect x="660.8" y="570" width="8" height="354.1" fill="#151d26"/><path d="M 668.8 570 L 738.8 580 L 736.8 650 L 668.8 638 Z" fill="#7a1f1f" opacity="0.75"/><rect x="736.2" y="570" width="8" height="351.5" fill="#151d26"/><path d="M 744.2 570 L 814.2 580 L 812.2 650 L 744.2 638 Z" fill="#7a1f1f" opacity="0.75"/><rect x="324.9" y="570" width="8" height="359.4" fill="#151d26"/><path d="M 332.9 570 L 402.9 580 L 400.9 650 L 332.9 638 Z" fill="#7a1f1f" opacity="0.75"/><rect x="294.1" y="570" width="8" height="305.8" fill="#151d26"/><path d="M 302.1 570 L 372.1 580 L 370.1 650 L 302.1 638 Z" fill="#7a1f1f" opacity="0.75"/>
+
+
+
+
+<rect width="1600" height="900" filter="url(#grain)" opacity="0.6"/>
+<rect width="1600" height="900" fill="url(#vig)"/>
+</svg>
