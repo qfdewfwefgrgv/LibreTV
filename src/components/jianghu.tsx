@@ -287,6 +287,12 @@ const SCENES: Record<string, { url: string; label: string }> = {
 
 /** 过场影像：按节点挂载本地 mp4，仅在点击时加载（preload=none），不拖慢首屏 */
 /** 天牢场景图（缺图时回落 story 场景） */
+/** 门派专属图（Muse 生成，缺图回落剧情场景） */
+const SECT_ART: Record<string, string> = {
+  taiyi: '/game/sects/taiyi.webp',
+  songshan: '/game/sects/songshan.webp',
+};
+
 const PRISON_SCENE: Record<number, string> = {
   1: '/game/scenes/prison-l1.webp',
   2: '/game/scenes/prison-l2.webp',
@@ -1022,7 +1028,16 @@ const GRADE_STYLE: Record<Grade, string> = {
 };
 
 /** 秘籍：只对同流派生效，提升伤害 */
-type Manual = { id: string; name: string; school: SchoolKey; grade: Grade; atk: number; desc: string };
+type Manual = {
+  id: string;
+  name: string;
+  school: SchoolKey;
+  grade: Grade;
+  atk: number;
+  desc: string;
+  /** 天牢碎片合成的秘籍：需先合成才能学 */
+  prison?: string;
+};
 
 const MANUALS: Manual[] = [
   { id: 'mq-d', name: '太祖长拳', school: 'quan', grade: 'D', atk: 0.06, desc: '入门拳架，朴实无华，拳路却极正，一招一式都落在空处之外。' },
@@ -1040,6 +1055,13 @@ const MANUALS: Manual[] = [
   { id: 'md-b', name: '狂风快刀', school: 'dao', grade: 'B', atk: 0.19, desc: '快得只剩刀光，风声未落，刀已收。' },
   { id: 'md-a', name: '修罗刀法', school: 'dao', grade: 'A', atk: 0.26, desc: '一刀断人退路，中者九死一生。' },
   { id: 'md-s', name: '天地一刀斩', school: 'dao', grade: 'S', atk: 0.35, desc: '只此一刀，天地为之一静。' },
+  // ── 天牢碎片合成 ──
+  { id: 'mp-wuhu', name: '五虎断门刀', school: 'dao', grade: 'D', atk: 0.08, desc: '刀走直线，五刀连环，独眼盗赖它劫了三年商队。', prison: 'shard-wuhu' },
+  { id: 'mp-duanhun', name: '断魂刀法', school: 'dao', grade: 'D', atk: 0.09, desc: '一刀断人退路，断魂刀客接的单从不超过三十两。', prison: 'shard-duanhun' },
+  { id: 'mp-dujing', name: '毒经', school: 'quan', grade: 'C', atk: 0.13, desc: '毒王的旧册子，前半部是药理，后半部才是杀人的。', prison: 'shard-dujing' },
+  { id: 'mp-wujian', name: '无名剑法', school: 'jian', grade: 'C', atk: 0.14, desc: '无名剑客的剑没有名字，招式也没有。', prison: 'shard-wujian' },
+  { id: 'mp-xuanyin', name: '玄阴内功', school: 'jian', grade: 'A', atk: 0.24, desc: '玄阴老人半辈子积下的阴寒真气，入体如附骨之疽。', prison: 'shard-xuanyin' },
+  { id: 'mp-sect', name: '门派高阶心法', school: 'quan', grade: 'A', atk: 0.25, desc: '叛门长老带走的那半卷心法，余下的一半没人敢补。', prison: 'shard-sect' },
 ];
 
 /** 内功：加攻击力 + 每次调息回复气血 */
@@ -2169,6 +2191,17 @@ export function JianghuGame() {
       pushLog(`已习得同级或更高的${SCHOOLS[hero.school].name}秘籍，无需再学《${m.name}》`, 'lose');
       return;
     }
+    // 天牢碎片合成的秘籍：只要合成过就能学，不受门派与贡献限制
+    if (m.prison) {
+      if (!prison.crafted.includes(m.prison)) {
+        pushLog(`《${m.name}》须先在天牢集齐残页合成（${prison.shards[m.prison] ?? 0} 片在手）。`, 'lose');
+        return;
+      }
+      setHero({ ...hero, manualId: m.id });
+      pushLog(`【秘籍】参悟天牢所得《${m.name}》，伤害 +${Math.round(m.atk * 100)}%`, 'win');
+      return;
+    }
+
     const sectKey = MANUAL_SECT[m.id];
     const sect = SECTS.find((x) => x.key === sectKey);
     const sectName = sect?.name ?? "门派";
@@ -3945,11 +3978,21 @@ export function JianghuGame() {
                     </div>
                     <button
                       type="button"
-                      disabled={owned || lower}
+                      disabled={owned || lower || (m.prison ? !prison.crafted.includes(m.prison) : false)}
                       onClick={() => learnManual(m)}
                       className="shrink-0 rounded border border-line px-2 py-1 text-[10px] text-muted hover:text-content disabled:opacity-40"
                     >
-                      {owned ? '已学' : lower ? '不如现有' : hero.sectKey !== MANUAL_SECT[m.id] ? `${SECTS.find((x) => x.key === MANUAL_SECT[m.id])?.name ?? '他派'}不传` : `${GRADE_CONTRIB[m.grade]} 贡献`}
+                      {owned
+                        ? '已学'
+                        : lower
+                          ? '不如现有'
+                          : m.prison
+                            ? prison.crafted.includes(m.prison)
+                              ? '参悟'
+                              : '未合成'
+                            : hero.sectKey !== MANUAL_SECT[m.id]
+                              ? `${SECTS.find((x) => x.key === MANUAL_SECT[m.id])?.name ?? '他派'}不传`
+                              : `${GRADE_CONTRIB[m.grade]} 贡献`}
                     </button>
                   </div>
                 );
@@ -4288,8 +4331,15 @@ export function JianghuGame() {
                     <div className="flex items-start gap-2">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={sceneArt(s.scene)}
-                        onError={onSceneArtError(s.scene)}
+                        src={SECT_ART[s.key] ?? sceneArt(s.scene)}
+                        onError={(e) => {
+                          const own = SECT_ART[s.key];
+                          if (own && e.currentTarget.src.endsWith(own)) {
+                            e.currentTarget.src = sceneArt(s.scene);
+                            return;
+                          }
+                          onSceneArtError(s.scene)(e);
+                        }}
                         alt={info.label}
                         loading="lazy"
                         className="h-12 w-16 shrink-0 rounded border border-line object-cover"
