@@ -45,6 +45,13 @@ import {
   type TreasureState,
 } from '@/components/jianghu/treasure';
 import {
+  SECT_RANKS,
+  applyPromote,
+  manualGradeAllowed,
+  rankOf,
+  rankProgress,
+} from '@/components/jianghu/sects';
+import {
   COMPANIONS,
   companionActive,
   companionJoined,
@@ -152,6 +159,8 @@ type Hero = {
   sectKey?: string | null;
   /** 门派贡献：捐银与悬赏积累，可在门派换取 S 级武学 */
   contribution?: number;
+  /** 门派身份：0 外门 ~ 5 掌门候选 */
+  sectRank?: number;
   /** 酒意：在江湖中行走、饮酒时积攒，满 10 点化为一点酒量 */
   wine?: number;
   /** 酒量：每点提升 3 点气血上限（原作「酒意化酒量」只在游戏内转化） */
@@ -2226,6 +2235,10 @@ export function JianghuGame() {
       pushLog(`《${m.name}》是${sectName}不传之秘，须先拜入${sectName}方能修习。`, 'lose');
       return;
     }
+    if (!manualGradeAllowed(hero.sectRank, m.grade)) {
+      pushLog(`【${sectName}】以你${rankOf(hero.sectRank).name}的身份，还学不到 ${m.grade} 级秘籍。`, 'lose');
+      return;
+    }
     const need = GRADE_CONTRIB[m.grade];
     const have = hero.contribution ?? 0;
     if (have < need) {
@@ -2359,6 +2372,17 @@ export function JianghuGame() {
     const keep = hero.contribution ?? 0;
     setHero({ ...hero, sectKey: null });
     pushLog(`【门派】你退出${s.name}，${keep} 点贡献保留在身，随时可另投他派。`, 'event');
+  };
+
+  /** 门派身份晋升：扣贡献，提升可修习武学品级 */
+  const promoteSect = () => {
+    if (!hero) return;
+    const sect = sectOf(hero);
+    if (!sect) return;
+    const r = applyPromote(hero.sectRank, hero.contribution ?? 0, hero.level);
+    if (!r.ok) { pushLog(r.message, 'lose'); return; }
+    setHero({ ...hero, sectRank: r.rank, contribution: r.contribution });
+    pushLog(r.message, 'win');
   };
 
   const donateSect = () => {
@@ -4387,6 +4411,41 @@ export function JianghuGame() {
                 </div>
               </div>
             )}
+
+            {/* 弟子身份与晋升 */}
+            {sectOf(hero) && (() => {
+              const pg = rankProgress(hero.sectRank, hero.contribution ?? 0, hero.level);
+              return (
+                <div className="mt-3 rounded-lg border border-accent/40 bg-accent/5 p-2.5">
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-[12px] font-semibold text-accent">{pg.cur.name}</span>
+                    <span className="text-[10px] text-faint">可修 {pg.cur.maxManualGrade} 级秘籍</span>
+                  </div>
+                  <p className="mt-0.5 text-[10px] leading-snug text-faint">{pg.cur.desc}</p>
+                  {pg.nxt ? (
+                    <>
+                      <div className="mt-1.5 flex items-center gap-2 text-[10px] text-muted">
+                        <span>下一阶 {pg.nxt.name}</span>
+                        <span className="text-faint">贡献 {hero.contribution ?? 0}/{pg.nxt.needContribution}</span>
+                        <span className="text-faint">等级 {hero.level}/{pg.nxt.needLevel}</span>
+                      </div>
+                      <div className="mt-1 h-1 overflow-hidden rounded-full bg-surface-raised">
+                        <div className="h-full rounded-full bg-accent/70" style={{ width: Math.min(pg.contribPct, pg.levelPct) + '%' }} />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={promoteSect}
+                        className="mt-1.5 w-full rounded-lg border border-accent/50 bg-accent/10 px-2 py-1.5 text-[11px] font-semibold text-accent hover:bg-accent/20"
+                      >
+                        申请晋升（扣 {pg.nxt.needContribution} 贡献）
+                      </button>
+                    </>
+                  ) : (
+                    <p className="mt-1 text-[10px] text-warning">已至掌门候选，师门之内再无敌手。</p>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* 堂口结构：对齐原版分堂拜师 */}
             {sectOf(hero) && SECT_HALLS[sectOf(hero)!.key] && (
