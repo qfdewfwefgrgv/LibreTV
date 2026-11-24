@@ -954,6 +954,18 @@ type Grade = 'D' | 'C' | 'B' | 'A' | 'S';
 
 const GRADE_INDEX: Record<Grade, number> = { D: 0, C: 1, B: 2, A: 3, S: 4 };
 const GRADE_PRICE: Record<Grade, number> = { D: 60, C: 130, B: 240, A: 400, S: 650 };
+/** 学艺只认门派贡献，不认银两 */
+const GRADE_CONTRIB: Record<Grade, number> = { D: 10, C: 25, B: 45, A: 70, S: 100 };
+/** 秘籍归属门派：不传之秘，非本门弟子不得修习 */
+const MANUAL_SECT: Record<string, string> = {
+  'mq-d': 'shaolin', 'mq-c': 'shaolin', 'mq-b': 'shaolin', 'mq-a': 'shaolin', 'mq-s': 'shaolin',
+  'mj-d': 'huashan', 'mj-c': 'huashan', 'mj-b': 'huashan', 'mj-a': 'wudang', 'mj-s': 'wudang',
+  'md-d': 'songshan', 'md-c': 'songshan', 'md-b': 'songshan', 'md-a': 'songshan', 'md-s': 'songshan',
+};
+/** 内功归属门派 */
+const INNER_SECT: Record<string, string> = {
+  'in-d': 'emei', 'in-c': 'emei', 'in-b': 'taiyi', 'in-a': 'taiyi', 'in-s': 'shaolin',
+};
 const GRADE_STYLE: Record<Grade, string> = {
   D: 'border-line text-muted',
   C: 'border-success/50 text-success',
@@ -1099,6 +1111,37 @@ const SECTS: Sect[] = [
     passive: '伤害 +4%、速度 +2', atk: 0.04, speed: 2,
   },
 ];
+
+/** 门派堂口：原版每派分堂，各堂师父教授不同武学 */
+const SECT_HALLS: Record<string, { hall: string; master: string; teaches: string }[]> = {
+  shaolin: [
+    { hall: '达摩院', master: '玄悲', teaches: '拳法 · 指法 · 内功' },
+    { hall: '罗汉堂', master: '玄寂', teaches: '罗汉拳 · 金刚拳' },
+    { hall: '般若堂', master: '玄难', teaches: '掌法 · 降龙伏虎' },
+    { hall: '戒律院', master: '玄痛', teaches: '擒拿 · 心经' },
+  ],
+  wudang: [
+    { hall: '紫霄宫', master: '张真人', teaches: '太极 · 剑法 S 级' },
+    { hall: '真武堂', master: '宋远桥', teaches: '剑法 · 玄功' },
+    { hall: '老君坛', master: '俞莲舟', teaches: '虎爪 · 内功' },
+  ],
+  emei: [
+    { hall: '金顶禅院', master: '静玄', teaches: '吐纳 · 小无相' },
+    { hall: '伏虎堂', master: '静照', teaches: '峨眉剑法' },
+  ],
+  huashan: [
+    { hall: '玉女峰', master: '岳清玄', teaches: '青萍 · 回风剑法' },
+    { hall: '思过崖', master: '封不平', teaches: '两仪 · 夺命十三剑' },
+  ],
+  songshan: [
+    { hall: '嵩阳楼', master: '左冷禅', teaches: '刀法 · 铁剑' },
+    { hall: '铁剑堂', master: '汤英鹗', teaches: '快刀 · 修罗刀' },
+  ],
+  taiyi: [
+    { hall: '三生塔', master: '云阳子', teaches: '龟息 · 易筋经' },
+    { hall: '丹房', master: '玄阳', teaches: '炼丹 · 内功' },
+  ],
+};
 
 const SECT_CONTRIB_PRICE = 50; // 捐银 50 两 = 5 点贡献
 const SECT_MANUAL_COST = 60; // 60 贡献换本门 S 级秘籍
@@ -2071,12 +2114,21 @@ export function JianghuGame() {
       pushLog(`已习得同级或更高的${SCHOOLS[hero.school].name}秘籍，无需再学《${m.name}》`, 'lose');
       return;
     }
-    if (hero.silver < GRADE_PRICE[m.grade]) {
-      pushLog(`银两不足（需 ${GRADE_PRICE[m.grade]}，现有 ${hero.silver}）`, 'lose');
+    const sectKey = MANUAL_SECT[m.id];
+    const sect = SECTS.find((x) => x.key === sectKey);
+    const sectName = sect?.name ?? "门派";
+    if (hero.sectKey !== sectKey) {
+      pushLog(`《${m.name}》是${sectName}不传之秘，须先拜入${sectName}方能修习。`, 'lose');
       return;
     }
-    setHero({ ...hero, silver: hero.silver - GRADE_PRICE[m.grade], manualId: m.id });
-    pushLog(`【秘籍】研习《${m.name}》（${m.grade} 级），伤害 +${Math.round(m.atk * 100)}%`, 'win');
+    const need = GRADE_CONTRIB[m.grade];
+    const have = hero.contribution ?? 0;
+    if (have < need) {
+      pushLog(`【${sectName}】贡献不足（需 ${need}，现有 ${have}）。可捐银或接悬赏积累。`, 'lose');
+      return;
+    }
+    setHero({ ...hero, contribution: have - need, manualId: m.id });
+    pushLog(`【秘籍】以 ${need} 点${sectName}贡献研习《${m.name}》（${m.grade} 级），伤害 +${Math.round(m.atk * 100)}%`, 'win');
   };
 
   const learnInner = (i: Inner) => {
@@ -2086,12 +2138,21 @@ export function JianghuGame() {
       pushLog(`已修成同级或更高的内功，无需再练《${i.name}》`, 'lose');
       return;
     }
-    if (hero.silver < GRADE_PRICE[i.grade]) {
-      pushLog(`银两不足（需 ${GRADE_PRICE[i.grade]}，现有 ${hero.silver}）`, 'lose');
+    const sectKey = INNER_SECT[i.id];
+    const sect = SECTS.find((x) => x.key === sectKey);
+    const sectName = sect?.name ?? "门派";
+    if (hero.sectKey !== sectKey) {
+      pushLog(`《${i.name}》为${sectName}心法，须先拜入${sectName}方能修习。`, 'lose');
       return;
     }
-    setHero({ ...hero, silver: hero.silver - GRADE_PRICE[i.grade], innerId: i.id });
-    pushLog(`【内功】修习《${i.name}》（${i.grade} 级），伤害 +${Math.round(i.atk * 100)}%，每回合回气 ${i.regen}`, 'win');
+    const need = GRADE_CONTRIB[i.grade];
+    const have = hero.contribution ?? 0;
+    if (have < need) {
+      pushLog(`【${sectName}】贡献不足（需 ${need}，现有 ${have}）。`, 'lose');
+      return;
+    }
+    setHero({ ...hero, contribution: have - need, innerId: i.id });
+    pushLog(`【内功】以 ${need} 点${sectName}贡献修习《${i.name}》，每回合回气 ${i.regen}`, 'win');
   };
 
   /** 装备：同槽位自动替换 */
@@ -2182,6 +2243,16 @@ export function JianghuGame() {
     }
     setHero({ ...hero, sectKey: s.key, contribution: hero.contribution ?? 0 });
     pushLog(`【门派】你拜入${s.name}门下：${s.passive}`, 'win');
+  };
+
+  /** 退出师门：贡献保留，可另投他派（对齐原版「攒贡献退门转派」） */
+  const leaveSect = () => {
+    if (!hero) return;
+    const s = sectOf(hero);
+    if (!s) return;
+    const keep = hero.contribution ?? 0;
+    setHero({ ...hero, sectKey: null });
+    pushLog(`【门派】你退出${s.name}，${keep} 点贡献保留在身，随时可另投他派。`, 'event');
   };
 
   const donateSect = () => {
@@ -3550,7 +3621,7 @@ export function JianghuGame() {
                       onClick={() => learnManual(m)}
                       className="shrink-0 rounded border border-line px-2 py-1 text-[10px] text-muted hover:text-content disabled:opacity-40"
                     >
-                      {owned ? '已学' : lower ? '不如现有' : `${GRADE_PRICE[m.grade]} 两`}
+                      {owned ? '已学' : lower ? '不如现有' : hero.sectKey !== MANUAL_SECT[m.id] ? `${SECTS.find((x) => x.key === MANUAL_SECT[m.id])?.name ?? '他派'}不传` : `${GRADE_CONTRIB[m.grade]} 贡献`}
                     </button>
                   </div>
                 );
@@ -3580,7 +3651,7 @@ export function JianghuGame() {
                       onClick={() => learnInner(i)}
                       className="shrink-0 rounded border border-line px-2 py-1 text-[10px] text-muted hover:text-content disabled:opacity-40"
                     >
-                      {owned ? '已修' : lower ? '不如现有' : `${GRADE_PRICE[i.grade]} 两`}
+                      {owned ? '已修' : lower ? '不如现有' : hero.sectKey !== INNER_SECT[i.id] ? `${SECTS.find((x) => x.key === INNER_SECT[i.id])?.name ?? '他派'}心法` : `${GRADE_CONTRIB[i.grade]} 贡献`}
                     </button>
                   </div>
                 );
@@ -3749,7 +3820,8 @@ export function JianghuGame() {
                     <div className="flex items-start gap-2">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={info.url}
+                        src={sceneArt(q.scene)}
+                        onError={onSceneArtError(q.scene)}
                         alt={info.label}
                         loading="lazy"
                         className="h-12 w-16 shrink-0 rounded border border-line object-cover"
@@ -3857,6 +3929,28 @@ export function JianghuGame() {
               </div>
             )}
 
+            {/* 堂口结构：对齐原版分堂拜师 */}
+            {sectOf(hero) && SECT_HALLS[sectOf(hero)!.key] && (
+              <div className="mt-3">
+                <div className="text-[11px] font-semibold text-content">本门堂口</div>
+                <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2">
+                  {SECT_HALLS[sectOf(hero)!.key].map((h) => (
+                    <div key={h.hall} className="rounded-lg border border-line px-2 py-1.5">
+                      <div className="text-[11px] font-semibold text-content">{h.hall}</div>
+                      <div className="text-[10px] text-faint">{h.master} · {h.teaches}</div>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={leaveSect}
+                  className="mt-2 w-full rounded-lg border border-danger/40 bg-danger/5 px-2 py-1.5 text-[11px] text-danger hover:bg-danger/10"
+                >
+                  离开师门（贡献保留）
+                </button>
+              </div>
+            )}
+
             <div className="mt-3 space-y-2">
               {SECTS.map((s) => {
                 const joined = hero.sectKey === s.key;
@@ -3866,7 +3960,8 @@ export function JianghuGame() {
                     <div className="flex items-start gap-2">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={info.url}
+                        src={sceneArt(s.scene)}
+                        onError={onSceneArtError(s.scene)}
                         alt={info.label}
                         loading="lazy"
                         className="h-12 w-16 shrink-0 rounded border border-line object-cover"
