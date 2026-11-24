@@ -1718,6 +1718,7 @@ export function JianghuGame() {
   const [videoOpen, setVideoOpen] = useState<{ src: string; title: string } | null>(null);
   // 对白逐字显示：模拟游戏对话框
   const [worldOpen, setWorldOpen] = useState(false);
+  const worldAutoOpened = useRef(false);
 
   const [typedLen, setTypedLen] = useState(0);
   const [typingDone, setTypingDone] = useState(false);
@@ -1942,6 +1943,14 @@ export function JianghuGame() {
     setBattleFx([]);
     setChapterIntro(null);
   };
+
+  // 选完出身 / 重开后，自动落地世界，避免一上来就是文字页
+  useEffect(() => {
+    if (worldAutoOpened.current) return;
+    if (phase !== 'play' || !hero || !originKey) return;
+    worldAutoOpened.current = true;
+    setWorldOpen(true);
+  }, [phase, hero, originKey]);
 
   // 逐字显示当前节点正文；切换节点时重置
   useEffect(() => {
@@ -3479,9 +3488,18 @@ export function JianghuGame() {
             </div>
           )}
 
-          <button type="button" onClick={restart} className="mt-3 text-xs text-faint hover:text-content">
-            ↻ 重开一局
-          </button>
+          <div className="mt-3 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setWorldOpen(true)}
+              className="rounded-lg border border-accent/50 bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent/20"
+            >
+              🗺️ 回到城中
+            </button>
+            <button type="button" onClick={restart} className="text-xs text-faint hover:text-content">
+              ↻ 重开一局
+            </button>
+          </div>
         </div>
       )}
 
