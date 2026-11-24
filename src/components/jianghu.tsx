@@ -286,6 +286,12 @@ const SCENES: Record<string, { url: string; label: string }> = {
 };
 
 /** 过场影像：按节点挂载本地 mp4，仅在点击时加载（preload=none），不拖慢首屏 */
+/** 天牢场景图（缺图时回落 story 场景） */
+const PRISON_SCENE: Record<number, string> = {
+  1: '/game/scenes/prison-l1.webp',
+  2: '/game/scenes/prison-l2.webp',
+};
+
 const NODE_VIDEO: Record<string, { src: string; title: string }> = {
   'o-noble': { src: '/game/videos/trailer-1-luoyang.mp4', title: '洛阳残雪' },
   'o-orphan': { src: '/game/videos/trailer-1-luoyang.mp4', title: '青牛村雪' },
@@ -331,6 +337,13 @@ const PORTRAITS: Record<string, string> = {
   鞑靼千夫长: '/game/portraits/tatarchief.webp',
   黑心粮官: '/game/portraits/liangguan.webp',
   镇北侯: '/game/portraits/zhenbei.webp',
+  // 天牢囚犯（Muse 生成，缺图时回落通用立绘）
+  独眼盗: '/game/portraits/prisoner-duyan.webp',
+  断魂刀客: '/game/portraits/prisoner-duanhun.webp',
+  毒王: '/game/portraits/prisoner-duwang.webp',
+  玄阴老人: '/game/portraits/prisoner-xuanyin.webp',
+  无名剑客: '/game/portraits/prisoner-wujian.webp',
+  叛门长老: '/game/portraits/prisoner-panmen.webp',
 };
 
 // ──────────────────────────── 流派（拳 / 剑 / 刀） ────────────────────────────
@@ -4562,8 +4575,22 @@ export function JianghuGame() {
             <div className="relative h-64 shrink-0 overflow-hidden sm:h-80">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={sceneArt(sceneKey)}
-                onError={onSceneArtError(sceneKey)}
+                src={
+                  battle.combat.prison
+                    ? (PRISON_SCENE[PRISONERS.find((p) => p.id === battle.combat.prison)?.floor ?? 1] ?? sceneArt(sceneKey))
+                    : sceneArt(sceneKey)
+                }
+                onError={(e) => {
+                  // 天牢场景图缺失时回落到剧情场景
+                  const prison = battle.combat.prison
+                    ? PRISON_SCENE[PRISONERS.find((p) => p.id === battle.combat.prison)?.floor ?? 1]
+                    : undefined;
+                  if (prison && e.currentTarget.src.endsWith(prison)) {
+                    e.currentTarget.src = sceneArt(sceneKey);
+                    return;
+                  }
+                  onSceneArtError(sceneKey)(e);
+                }}
                 alt={scene.label}
                 className="absolute inset-0 h-full w-full object-cover"
               />
@@ -4623,7 +4650,14 @@ export function JianghuGame() {
                 </div>
 
                 <div className="relative">
-                  <StageArt name={battle.enemyDef.name} side="right" />
+                  <StageArt
+                    name={
+                      battle.combat.prison
+                        ? PRISONERS.find((p) => p.id === battle.combat.prison)?.name ?? battle.enemyDef.name
+                        : battle.enemyDef.name
+                    }
+                    side="right"
+                  />
                   {lastEnemyFx && lastEnemyFx.tone !== 'heal' && (
                     <span
                       key={'ef-' + lastEnemyFx.id}
