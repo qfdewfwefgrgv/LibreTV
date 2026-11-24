@@ -190,7 +190,7 @@ export const CHAPTER4_NODES: Record<string, StoryNode> = {
     text:
       '地宫的灯灭了。殷无咎或倒或退，黑旗终于倒下。山外传来三十六派的鼓声——他们在等你给出余烬之后的答案：继续执令，归隐，还是另立山头。',
     choices: [
-      { label: '执令回华山，重申规矩', effects: { chivalry: 8 }, next: 'end-judge' },
+      { label: '执令回华山，先看朝廷怎么说', effects: { chivalry: 8 }, next: 'e01' },
       { label: '把令交还群雄，抽身而去', next: 'end-hermit' },
       { label: '收编残党，另立门户', effects: { chivalry: -12, qi: 6 }, next: 'end-demon' },
     ],

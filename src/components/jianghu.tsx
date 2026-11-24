@@ -29,6 +29,7 @@ import {
   type SkillId,
 } from '@/components/jianghu/combat-ext';
 import { CHAPTER4_LABEL, CHAPTER4_NODES, CHAPTER4_SCENES } from '@/components/jianghu/story-ch4';
+import { CHAPTER5_LABEL, CHAPTER5_NODES, CHAPTER5_SCENES } from '@/components/jianghu/story-ch5';
 import {
   QUEST_CHAINS,
   advanceQuestStep,
@@ -43,7 +44,7 @@ import {
 
 // ──────────────────────────── 基础类型 ────────────────────────────
 
-type Chapter = 1 | 2 | 3 | 4;
+type Chapter = 1 | 2 | 3 | 4 | 5;
 type EndingKey = 'lord' | 'hermit' | 'demon' | 'death';
 type LogTone = 'info' | 'win' | 'lose' | 'event';
 type SchoolKey = 'quan' | 'jian' | 'dao';
@@ -264,6 +265,7 @@ const NODE_SCENE: Record<string, string> = {
   c01: 'peak', c02: 'peak', c03: 'dungeon', c04: 'dungeon', c05: 'peak',
   c06: 'peak', c07: 'peak', c08: 'huashan',
   ...CHAPTER4_SCENES,
+  ...CHAPTER5_SCENES,
   'end-judge': 'huashan', 'end-lord': 'huashan', 'end-hermit': 'jiangnan',
   'end-demon': 'dungeon', 'end-death': 'mist',
 };
@@ -282,6 +284,10 @@ const PORTRAITS: Record<string, string> = {
   独眼掌柜: '/game/portraits/duyan.webp',
   青城弟子: '/game/portraits/qingcheng.webp',
   魔教护法: '/game/portraits/mofu.webp',
+  // 第五章边关线：暂用风格相近的现有立绘占位（额度恢复后换专属立绘）
+  鞑靼千夫长: '/game/portraits/heita.webp',
+  黑心粮官: '/game/portraits/duyan.webp',
+  镇北侯: '/game/portraits/yinwujiu.webp',
 };
 
 // ──────────────────────────── 流派（拳 / 剑 / 刀） ────────────────────────────
@@ -332,6 +338,18 @@ type EnemyDef = {
 };
 
 const ENEMIES: Record<string, EnemyDef> = {
+  鞑靼千夫长: {
+    name: '鞑靼千夫长', school: 'dao', qi: 40, wit: 26, power: 0.95, hpBase: 70, hpPerDiff: 1.9,
+    intro: '北地悍将，甲胄结冰，一柄弯刀专砍马腿与人颈。',
+  },
+  黑心粮官: {
+    name: '黑心粮官', school: 'quan', qi: 34, wit: 38, power: 0.7, hpBase: 55, hpPerDiff: 1.6,
+    intro: '文官出身却养了二十名弓手，最擅在粮册上做手脚。',
+  },
+  镇北侯: {
+    name: '镇北侯', school: 'jian', qi: 60, wit: 46, power: 1.0, hpBase: 90, hpPerDiff: 2.0,
+    intro: '边军主帅，剑走轻灵，帐下刀斧手如林。他信的从来不是公道，是银子。',
+  },
   黑塔: {
     name: '黑塔', school: 'dao', qi: 30, wit: 20, power: 0.9, hpBase: 55, hpPerDiff: 1.7,
     intro: '黑风寨主，一柄厚背鬼头刀，杀人如切菜。',
@@ -858,6 +876,7 @@ const NODES: Record<string, StoryNode> = {
 
   // ───────────────── 第四章 · 余烬 ─────────────────
   ...CHAPTER4_NODES,
+  ...CHAPTER5_NODES,
 
   // ───────────────── 结局 ─────────────────
   'end-judge': {
@@ -1284,6 +1303,7 @@ const CHAPTER_LABELS: Record<Chapter, string> = {
   2: '第二章 · 名动一方',
   3: '第三章 · 风云际会',
   4: CHAPTER4_LABEL,
+  5: CHAPTER5_LABEL,
 };
 
 const ENDINGS: Record<EndingKey, { title: string; text: string; tone: string }> = {
@@ -1611,6 +1631,35 @@ function strikeText(
 }
 
 // ──────────────────────────── 头像组件（人头，带 emoji 兜底） ────────────────────────────
+
+/** 战斗舞台立绘：方框裁切 + 受光渐变，替代原来的圆形小头像 */
+function StageArt({ name, side }: { name: string; side: 'left' | 'right' }) {
+  const [failed, setFailed] = useState(false);
+  const url = PORTRAITS[name];
+  const isSchool = name in SCHOOLS;
+  const emoji = isSchool ? SCHOOLS[name as SchoolKey].emoji : '🗡️';
+  return (
+    <div
+      className={
+        'relative h-32 w-24 overflow-hidden rounded-xl border-2 bg-black/40 shadow-[0_10px_28px_rgba(0,0,0,0.65)] sm:h-44 sm:w-32 ' +
+        (side === 'left' ? 'border-accent/60' : 'border-danger/60')
+      }
+    >
+      {url && !failed ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={url}
+          alt={name}
+          onError={() => setFailed(true)}
+          className={'h-full w-full object-cover ' + (side === 'right' ? 'scale-x-[-1]' : '')}
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center text-4xl">{emoji}</div>
+      )}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent" />
+    </div>
+  );
+}
 
 function Portrait({ name, size, ring }: { name: string; size: number; ring?: string }) {
   const [failed, setFailed] = useState(false);
@@ -3956,105 +4005,151 @@ export function JianghuGame() {
               battle.shake ? 'jh-shake' : ''
             }`}
           >
-            {/* 战斗场景横幅 */}
-            <div className="relative h-32 shrink-0 sm:h-44">
+            {/* ── 战斗舞台：场景背景 + 双方立绘对峙 ── */}
+            <div className="relative h-64 shrink-0 overflow-hidden sm:h-80">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={sceneArt(sceneKey)} onError={onSceneArtError(sceneKey)} alt={scene.label} className="h-full w-full object-cover" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent" />
-              <div className="absolute bottom-2 left-3 text-[11px] font-semibold text-white">
-                ⚔️ 激战 · {scene.label}
-                {BOSS_NAMES.has(battle.enemyDef.name) ? ` · Boss 阶段 ${battle.phase ?? 1}` : ''}
-              </div>
-              <div className="absolute right-3 top-2 flex flex-col items-end gap-1">
-                <span className="rounded bg-black/50 px-2 py-0.5 text-[10px] text-white/80">第 {battle.round} 回合</span>
-                <span className="rounded bg-accent/80 px-2 py-0.5 text-[10px] text-white">
-                  连招 {(battle.combo ?? 0)}/{COMBO_MAX} · 内息 {battle.breath ?? 0}
+              <img
+                src={sceneArt(sceneKey)}
+                onError={onSceneArtError(sceneKey)}
+                alt={scene.label}
+                className="absolute inset-0 h-full w-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/20 to-black/92" />
+
+              {/* 顶部信息条 */}
+              <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-2.5">
+                <span className="rounded bg-black/55 px-2 py-0.5 text-[10px] font-semibold text-white/90 backdrop-blur-sm">
+                  ⚔️ {scene.label}
+                  {BOSS_NAMES.has(battle.enemyDef.name) ? ' · Boss 阶段 ' + (battle.phase ?? 1) : ''}
                 </span>
+                <div className="flex flex-col items-end gap-1">
+                  <span className="rounded bg-black/55 px-2 py-0.5 text-[10px] text-white/85 backdrop-blur-sm">
+                    第 {battle.round} 回合
+                  </span>
+                  <span className="rounded bg-accent/85 px-2 py-0.5 text-[10px] font-semibold text-white">
+                    连招 {battle.combo ?? 0}/{COMBO_MAX} · 内息 {battle.breath ?? 0}
+                  </span>
+                </div>
               </div>
-              {/* Boss 阶段血条色带 */}
-              <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/40">
-                <div
-                  className={`h-full transition-all ${(battle.phase ?? 1) >= 3 ? 'bg-danger' : (battle.phase ?? 1) >= 2 ? 'bg-warning' : 'bg-success'}`}
-                  style={{ width: `${clamp((battle.enemyHp / battle.enemyMaxHp) * 100, 0, 100)}%` }}
-                />
+
+              {/* 双方立绘 */}
+              <div className="absolute inset-x-0 bottom-10 flex items-end justify-between px-4 pb-1">
+                <div className="relative">
+                  <StageArt name={avatarKey} side="left" />
+                  {lastPlayerFx && lastPlayerFx.tone !== 'heal' && (
+                    <span
+                      key={'pf-' + lastPlayerFx.id}
+                      className="jh-flash pointer-events-none absolute inset-0 rounded-xl bg-white/85"
+                    />
+                  )}
+                  {playerFx.slice(-3).map((f) => (
+                    <span
+                      key={f.id}
+                      className={
+                        'jh-fx pointer-events-none absolute inset-0 flex items-center justify-center text-base font-black drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] ' +
+                        FX_COLOR[f.tone]
+                      }
+                    >
+                      {f.text}
+                    </span>
+                  ))}
+                  {battle.playerStun > 0 && (
+                    <span className="absolute -left-1 -top-1 rounded bg-warning/90 px-1 py-0.5 text-[9px] font-bold text-black">
+                      🌀{battle.playerStun}
+                    </span>
+                  )}
+                  {battle.playerBleed && (
+                    <span className="absolute -right-1 -top-1 rounded bg-danger/90 px-1 py-0.5 text-[9px] font-bold text-white">
+                      🩸{battle.playerBleed.rounds}
+                    </span>
+                  )}
+                </div>
+
+                <div className="mb-8 select-none text-2xl font-black text-danger drop-shadow-[0_0_10px_rgba(0,0,0,0.95)]">
+                  VS
+                </div>
+
+                <div className="relative">
+                  <StageArt name={battle.enemyDef.name} side="right" />
+                  {lastEnemyFx && lastEnemyFx.tone !== 'heal' && (
+                    <span
+                      key={'ef-' + lastEnemyFx.id}
+                      className="jh-flash pointer-events-none absolute inset-0 rounded-xl bg-white/85"
+                    />
+                  )}
+                  {enemyFx.slice(-3).map((f) => (
+                    <span
+                      key={f.id}
+                      className={
+                        'jh-fx pointer-events-none absolute inset-0 flex items-center justify-center text-base font-black drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] ' +
+                        FX_COLOR[f.tone]
+                      }
+                    >
+                      {f.text}
+                    </span>
+                  ))}
+                  {battle.enemyStun > 0 && (
+                    <span className="absolute -left-1 -top-1 rounded bg-warning/90 px-1 py-0.5 text-[9px] font-bold text-black">
+                      🌀{battle.enemyStun}
+                    </span>
+                  )}
+                  {battle.enemyBleed && (
+                    <span className="absolute -right-1 -top-1 rounded bg-danger/90 px-1 py-0.5 text-[9px] font-bold text-white">
+                      🩸{battle.enemyBleed.rounds}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* 悬浮血条 */}
+              <div className="absolute inset-x-0 bottom-0 grid grid-cols-2 gap-4 bg-gradient-to-t from-black/92 via-black/70 to-transparent px-3 pb-2 pt-6">
+                <div>
+                  <div className="mb-0.5 flex items-baseline justify-between text-[10px]">
+                    <span className="truncate font-semibold text-white/95">你 · {SCHOOLS[hero.school].name}</span>
+                    <span className="ml-1 shrink-0 text-white/70">
+                      {Math.max(0, battle.playerHp)}/{hero.maxHp}
+                    </span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-black/60">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-success to-success/70 transition-all duration-500 ease-out"
+                      style={{ width: clamp((battle.playerHp / hero.maxHp) * 100, 0, 100) + '%' }}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-0.5 flex items-baseline justify-between text-[10px]">
+                    <span className="shrink-0 text-white/70">
+                      {Math.max(0, battle.enemyHp)}/{battle.enemyMaxHp}
+                    </span>
+                    <span className="ml-1 truncate text-right font-semibold text-white/95">
+                      {battle.enemyDef.name} · {SCHOOLS[battle.enemyDef.school].name}
+                    </span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-black/60">
+                    <div
+                      className={
+                        'ml-auto h-full rounded-full transition-all duration-500 ease-out ' +
+                        ((battle.phase ?? 1) >= 3
+                          ? 'bg-gradient-to-l from-danger to-danger/70'
+                          : (battle.phase ?? 1) >= 2
+                            ? 'bg-gradient-to-l from-warning to-warning/70'
+                            : 'bg-gradient-to-l from-danger/90 to-danger/60')
+                      }
+                      style={{ width: clamp((battle.enemyHp / battle.enemyMaxHp) * 100, 0, 100) + '%' }}
+                    />
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* 对阵双方：人头 + 血条 */}
-            <div className="flex items-start gap-3 px-4 py-3">
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <div className="relative">
-                    <Portrait name={avatarKey} size={72} ring="border-accent/60" />
-                    {lastPlayerFx && lastPlayerFx.tone !== 'heal' && (
-                      <span key={`pf-${lastPlayerFx.id}`} className="jh-flash pointer-events-none absolute inset-0 rounded-full bg-white" />
-                    )}
-                    {playerFx.map((f) => (
-                      <span
-                        key={f.id}
-                        className={`jh-fx pointer-events-none absolute inset-0 flex items-center justify-center text-sm font-black drop-shadow ${FX_COLOR[f.tone]}`}
-                      >
-                        {f.text}
-                      </span>
-                    ))}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="truncate text-[13px] font-semibold text-content">你 · {SCHOOLS[hero.school].name}</div>
-                    <div className="text-[10px] text-faint">
-                      速度 {heroSpeed(hero)} · 会心 {clamp(critChance(hero.wit) + gearStats(hero).crit + (sectOf(hero)?.crit ?? 0) + swordIntentBonus(hero), 8, 60)}% · 敌闪避 {dodgeChance(battle.enemyDef.wit, hero.school)}% · 敌招架 {parryChance(battle.enemyDef.qi, hero.school)}%
-                    </div>
-                  </div>
-                </div>
-                <HpBar hp={battle.playerHp} maxHp={hero.maxHp} color="bg-success" />
-                {battle.playerStun > 0 && (
-                  <div className="mt-1 text-[10px] text-warning">
-                    🌀 眩晕 · 剩 {battle.playerStun} 回合无法出手
-                  </div>
-                )}
-                {battle.playerBleed && (
-                  <div className="mt-1 text-[10px] text-danger">
-                    🩸 流血 · 剩 {battle.playerBleed.rounds} 回合（每回合 {battle.playerBleed.dmg}）
-                  </div>
-                )}
-              </div>
-              <div className="pt-4 text-lg font-black text-danger">VS</div>
-              <div className="flex-1">
-                <div className="flex items-center justify-end gap-2 text-right">
-                  <div className="min-w-0">
-                    <div className="truncate text-[13px] font-semibold text-content">{battle.enemyDef.name} · {SCHOOLS[battle.enemyDef.school].name}</div>
-                    <div className="text-[10px] text-faint">
-                      速度 {enemySpeed(battle.enemyDef)} · 你闪避 {dodgeChance(hero.wit, battle.enemyDef.school)}% · 你招架 {parryChance(hero.qi, battle.enemyDef.school)}%
-                    </div>
-                  </div>
-                  <div className="relative">
-                    <Portrait name={battle.enemyDef.name} size={72} ring="border-danger/60" />
-                    {lastEnemyFx && lastEnemyFx.tone !== 'heal' && (
-                      <span key={`ef-${lastEnemyFx.id}`} className="jh-flash pointer-events-none absolute inset-0 rounded-full bg-white" />
-                    )}
-                    {enemyFx.map((f) => (
-                      <span
-                        key={f.id}
-                        className={`jh-fx pointer-events-none absolute inset-0 flex items-center justify-center text-sm font-black drop-shadow ${FX_COLOR[f.tone]}`}
-                      >
-                        {f.text}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <HpBar hp={battle.enemyHp} maxHp={battle.enemyMaxHp} color="bg-danger" right />
-                {battle.enemyStun > 0 && (
-                  <div className="mt-1 text-right text-[10px] text-warning">
-                    🌀 眩晕 · 剩 {battle.enemyStun} 回合无法出手
-                  </div>
-                )}
-                {battle.enemyBleed && (
-                  <div className="mt-1 text-right text-[10px] text-danger">
-                    🩸 流血 · 剩 {battle.enemyBleed.rounds} 回合（每回合 {battle.enemyBleed.dmg}）
-                  </div>
-                )}
-              </div>
+            {/* 属性速览（一行，不抢画面） */}
+            <div className="flex flex-wrap gap-x-3 gap-y-0.5 border-b border-line px-4 py-1.5 text-[10px] text-faint">
+              <span>我方 速度 {heroSpeed(hero)} · 会心 {clamp(critChance(hero.wit) + gearStats(hero).crit + (sectOf(hero)?.crit ?? 0) + swordIntentBonus(hero), 8, 60)}%</span>
+              <span>敌 速度 {enemySpeed(battle.enemyDef)}</span>
+              <span>敌闪避 {dodgeChance(battle.enemyDef.wit, hero.school)}% · 敌招架 {parryChance(battle.enemyDef.qi, hero.school)}%</span>
+              <span>你闪避 {dodgeChance(hero.wit, battle.enemyDef.school)}% · 你招架 {parryChance(hero.qi, battle.enemyDef.school)}%</span>
             </div>
-
             {/* 战报 */}
             <div ref={battleLogRef} className="mx-4 h-36 overflow-y-auto rounded-lg border border-line bg-card p-2.5 text-[11px] leading-relaxed">
               {battle.lines.map((l) => (
