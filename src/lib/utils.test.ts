@@ -20,12 +20,12 @@ describe('buildImageUrl', () => {
 describe('buildImageCandidates', () => {
   const DOUBAN = 'https://img3.doubanio.com/view/photo/m/poster.jpg';
 
-  it('direct 模式豆瓣图：直连 → 双镜像 → 内置代理', () => {
+  it('direct 模式豆瓣图：站内 /api/pic → 双镜像 → 原站直连', () => {
     expect(buildImageCandidates(DOUBAN, 'direct', '')).toEqual([
-      DOUBAN,
+      '/api/pic?url=' + encodeURIComponent(DOUBAN),
       'https://img.doubanio.cmliussss.net/view/photo/m/poster.jpg',
       'https://img.doubanio.cmliussss.com/view/photo/m/poster.jpg',
-      '/api/proxy?url=' + encodeURIComponent(DOUBAN),
+      DOUBAN,
     ]);
   });
 
@@ -42,11 +42,12 @@ describe('buildImageCandidates', () => {
     expect(cands[0]).toBe('https://doubanio.com/a.jpg');
   });
 
-  it('proxy 模式豆瓣图：内置代理 → 双镜像 → 直连（代理故障可回退）', () => {
+  it('proxy 模式豆瓣图：站内 /api/pic → 双镜像 → 内置代理 → 原站直连', () => {
     expect(buildImageCandidates(DOUBAN, 'proxy', '')).toEqual([
-      '/api/proxy?url=' + encodeURIComponent(DOUBAN),
+      '/api/pic?url=' + encodeURIComponent(DOUBAN),
       'https://img.doubanio.cmliussss.net/view/photo/m/poster.jpg',
       'https://img.doubanio.cmliussss.com/view/photo/m/poster.jpg',
+      '/api/proxy?url=' + encodeURIComponent(DOUBAN),
       DOUBAN,
     ]);
   });

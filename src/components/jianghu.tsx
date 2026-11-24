@@ -2501,7 +2501,7 @@ export function JianghuGame() {
     let enemyStun = battle.enemyStun;
     let combo = battle.combo ?? 0;
     let breath = battle.breath ?? 5;
-    let skillCd = { ...(battle.skillCd ?? {}) };
+    const skillCd = { ...(battle.skillCd ?? {}) };
     let phase = battle.phase ?? 1;
     let enemyCharged = battle.enemyCharged ?? false;
     let shake = false;
