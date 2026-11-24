@@ -45,6 +45,18 @@ import {
   type TreasureState,
 } from '@/components/jianghu/treasure';
 import {
+  PRISONERS,
+  SHARD_RECIPES,
+  canChallenge,
+  craftFromShards,
+  defaultPrison,
+  normalizePrison,
+  prisonSummary,
+  recordVictory,
+  refreshDaily,
+  type PrisonState,
+} from '@/components/jianghu/prison';
+import {
   QUEST_CHAINS,
   advanceQuestStep,
   questStepHint,
@@ -86,6 +98,8 @@ type Combat = {
   town?: string;
   /** 悬赏任务战：胜利后发放悬赏奖励，不推进剧情 */
   quest?: string;
+  /** 天牢挑战战：胜利后结算囚犯掉落 */
+  prison?: string;
 };
 type Choice = { label: string; effects?: Effects; combat?: Combat; next: string };
 
@@ -569,6 +583,8 @@ type SaveData = {
   activeQuestId?: string | null;
   /** 藏宝图进度 */
   treasure?: TreasureState;
+  /** 天牢进度 */
+  prison?: PrisonState;
 };
 
 type PendingGiftReward = {
@@ -1783,10 +1799,11 @@ export function JianghuGame() {
 
   const [typedLen, setTypedLen] = useState(0);
   const [typingDone, setTypingDone] = useState(false);
-  const [panel, setPanel] = useState<null | 'martial' | 'town' | 'bag' | 'quest' | 'sect' | 'meridian' | 'treasure'>(null);
+  const [panel, setPanel] = useState<null | 'martial' | 'town' | 'bag' | 'quest' | 'sect' | 'meridian' | 'treasure' | 'prison'>(null);
   const [cleared, setCleared] = useState<string[]>([]);
   const [questProgress, setQuestProgress] = useState<QuestProgress>({});
   const [treasure, setTreasure] = useState<TreasureState>(defaultTreasure());
+  const [prison, setPrison] = useState<PrisonState>(defaultPrison());
   const [activeQuestId, setActiveQuestId] = useState<string | null>(null);
   const [saveData, setSaveData] = useState<SaveData | null>(null);
   /** 读档时算出的离线挂机收益，供开局界面展示 */
@@ -1850,6 +1867,7 @@ export function JianghuGame() {
         if (data.questProgress) setQuestProgress(data.questProgress);
         if (data.activeQuestId) setActiveQuestId(data.activeQuestId);
       setTreasure(normalizeTreasure(data.treasure));
+      setPrison(refreshDaily(normalizePrison(data.prison)));
       }
     } catch {
       // 存档损坏或不可读时当作没有存档
@@ -1871,13 +1889,14 @@ export function JianghuGame() {
       questProgress,
       activeQuestId,
       treasure,
+      prison,
     };
     try {
       window.localStorage.setItem(SAVE_KEY, JSON.stringify(data));
     } catch {
       // 存储不可用时静默跳过
     }
-  }, [phase, hero, nodeId, cleared, battle, playerName, avatarKey, originKey, questProgress, activeQuestId, treasure]);
+  }, [phase, hero, nodeId, cleared, battle, playerName, avatarKey, originKey, questProgress, activeQuestId, treasure, prison]);
 
   // 走到结局即清档，避免读档回到结局前一幕
   useEffect(() => {
@@ -1928,6 +1947,7 @@ export function JianghuGame() {
     setCleared([]);
     setQuestProgress({});
     setTreasure(defaultTreasure());
+    setPrison(defaultPrison());
     setActiveQuestId(null);
     travelCount.current = 0;
     logSeq.current = 2 + gifted.lines.length;
@@ -2426,6 +2446,39 @@ export function JianghuGame() {
   };
 
   // ——— 场景探索 / 福州挖宝 / 炼丹 / 饮酒弹琴 ———
+
+  // ——— 天牢 · 江湖群雄 ———
+  const challengePrisoner = (id: string) => {
+    if (!hero) return;
+    const p = PRISONERS.find((x) => x.id === id);
+    if (!p) return;
+    const st = refreshDaily(prison);
+    setPrison(st);
+    if (hero.level < p.minLevel) {
+      pushLog(`【天牢】${p.name}不是你现在能动的人（需 ${p.minLevel} 级）。`, 'lose');
+      return;
+    }
+    if (!canChallenge(st, id)) {
+      pushLog(`【天牢】今日已从${p.name}身上取过东西，明日再来。`, 'lose');
+      return;
+    }
+    pushLog(`【天牢·第${p.floor}层】${p.taunt}`, 'event');
+    startBattle({
+      enemy: p.enemy,
+      difficulty: p.difficulty,
+      win: '',
+      lose: '',
+      prison: p.id,
+    });
+    setPanel(null);
+  };
+
+  const craftPrisonManual = (key: string) => {
+    const r = craftFromShards(prison, key);
+    if (!r.ok) { pushLog(r.message, 'lose'); return; }
+    setPrison(r.state);
+    pushLog(r.message, 'win');
+  };
 
   // ——— 藏宝图 ———
   const claimTreasureChapter = (chapter: number) => {
@@ -3062,6 +3115,16 @@ export function JianghuGame() {
         pushLog('【战利】捡到一页武学残页。', 'event');
       }
 
+      // 天牢挑战战：结算囚犯掉落（每日一次）
+      if (combat.prison) {
+        const r = recordVictory(prison, combat.prison);
+        setPrison(r.state);
+        pushLog(r.message, r.granted ? 'win' : 'event');
+        setBattle(null);
+        setHero(gainWine(next, 1));
+        return;
+      }
+
       // 悬赏任务战：链式先推进步骤；普通悬赏发奖
       const quest = combat.quest ? QUESTS.find((q) => q.id === combat.quest) ?? null : null;
       if (quest) {
@@ -3484,6 +3547,9 @@ export function JianghuGame() {
               <button type="button" onClick={() => setPanel('treasure')} className="rounded-md border border-warning/50 bg-warning/10 px-2 py-1 text-[10px] text-warning hover:bg-warning/20">
                 宝藏
               </button>
+              <button type="button" onClick={() => setPanel('prison')} className="rounded-md border border-danger/50 bg-danger/10 px-2 py-1 text-[10px] text-danger hover:bg-danger/20">
+                天牢
+              </button>
               <button type="button" onClick={() => setWorldOpen(true)} className="rounded-md border border-accent/50 bg-accent/10 px-2 py-1 text-[10px] text-accent hover:bg-accent/20">
                 世界
               </button>
@@ -3655,6 +3721,84 @@ export function JianghuGame() {
           </div>
         </div>
       )}
+
+      {/* ════ 天牢 · 江湖群雄 ════ */}
+      {panel === 'prison' && hero && (() => {
+        const sum = prisonSummary(refreshDaily(prison));
+        return (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm" onClick={() => setPanel(null)}>
+            <div className="max-h-[86vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-line bg-surface p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="mb-2 flex items-center justify-between">
+                <div className="text-sm font-bold text-content">⛓️ 天牢 · 江湖群雄</div>
+                <button type="button" onClick={() => setPanel(null)} className="rounded-md border border-line px-2 py-1 text-[10px] text-muted hover:text-content">关闭</button>
+              </div>
+              <div className="text-[10px] text-faint">
+                今日 {sum.day || '—'} · 已取 {sum.doneToday}/{sum.total} · 已合成 {sum.crafted} 部
+              </div>
+
+              {[1, 2].map((floor) => (
+                <div key={floor} className="mt-3">
+                  <div className="text-[11px] font-semibold text-content">第{floor === 1 ? '一' : '二'}层 · {floor === 1 ? '普通江湖罪犯' : '江湖高手'}</div>
+                  <div className="mt-1.5 space-y-1.5">
+                    {PRISONERS.filter((p) => p.floor === floor).map((p) => {
+                      const done = !canChallenge(refreshDaily(prison), p.id);
+                      const lowLv = hero.level < p.minLevel;
+                      return (
+                        <div key={p.id} className={`rounded-lg border p-2 ${done ? 'border-line/50 opacity-60' : 'border-line'}`}>
+                          <div className="flex items-start gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="text-[12px] font-semibold text-content">
+                                {p.name}
+                                <span className="ml-1 text-[10px] font-normal text-accent">{p.title}</span>
+                              </div>
+                              <p className="text-[10px] leading-snug text-faint">{p.story}</p>
+                              <div className="mt-0.5 text-[10px] text-white/40">掉落《{p.shardName}》×{p.shardCount} · 需 {p.minLevel} 级</div>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={done || lowLv}
+                              onClick={() => challengePrisoner(p.id)}
+                              className="shrink-0 rounded border border-danger/50 bg-danger/10 px-2 py-1 text-[10px] text-danger hover:bg-danger/20 disabled:opacity-40"
+                            >
+                              {done ? '今日已取' : lowLv ? '等级不足' : '提审'}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+
+              <div className="mt-3 text-[11px] font-semibold text-content">残页与合成</div>
+              <div className="mt-1.5 space-y-1">
+                {SHARD_RECIPES.map((r) => {
+                  const have = prison.shards[r.key] ?? 0;
+                  const crafted = prison.crafted.includes(r.key);
+                  return (
+                    <div key={r.key} className="flex items-center gap-2 rounded-lg border border-line px-2 py-1.5">
+                      <span className="w-4 shrink-0 text-center text-[10px] font-bold text-muted">{r.grade}</span>
+                      <span className="flex-1 truncate text-[11px] text-content">{r.name}</span>
+                      <span className="shrink-0 text-[10px] text-faint">{have}/{r.need}</span>
+                      <button
+                        type="button"
+                        disabled={crafted || have < r.need}
+                        onClick={() => craftPrisonManual(r.key)}
+                        className="shrink-0 rounded border border-accent/50 px-2 py-0.5 text-[10px] text-accent disabled:opacity-40"
+                      >
+                        {crafted ? '已成' : '合成'}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="mt-2 text-[10px] leading-relaxed text-faint">
+                ※ 每日刷新只重置挑战资格，已得残页永久保留；系统时间被改早时不会刷新 ※
+              </p>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ════ 藏宝图与江湖秘藏 ════ */}
       {panel === 'treasure' && hero && (() => {
