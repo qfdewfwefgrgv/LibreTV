@@ -217,6 +217,7 @@ export function WorldScene({
       earth1: '/game/world/tiles/tile-earth-1.webp',
       earth2: '/game/world/tiles/tile-earth-2.webp',
       plank: '/game/world/tiles/tile-plank.webp',
+      waterTex: '/game/world/tiles/tile-water.webp',
       roofTex: '/game/world/tiles/tile-roof.webp',
       ground6: '/game/world/tiles/tile-ground-6.webp',
       road1: '/game/world/tiles/tile-road-1.webp',
@@ -309,6 +310,7 @@ export function WorldScene({
     let roadPattern: CanvasPattern | null = null;
     let wallPattern: CanvasPattern | null = null;
     let plankPattern: CanvasPattern | null = null;
+    let waterPattern: CanvasPattern | null = null;
 
     const hits = (x: number, y: number, r: number) =>
       SOLID.some((b) => x + r > b.x && x - r < b.x + b.w && y + r > b.y && y - r < b.y + b.h);
@@ -647,48 +649,33 @@ export function WorldScene({
 
       // 河
       if (city.water) {
-        // 桥面：主街跨河处铺木板
-        const plankImg = R0['plank'];
-        if (plankImg && plankImg.complete) {
-          const bx = 760;
-          const bw = 480;
-          const by2 = city.water.y - 6;
-          const bh = city.water.h + 12;
-          if (!plankPattern) plankPattern = ctx.createPattern(plankImg, 'repeat');
-          if (plankPattern) {
+        const w = city.water;
+        const wtex = spritesRef.current['waterTex'];
+        if (wtex && wtex.complete) {
+          if (!waterPattern) waterPattern = ctx.createPattern(wtex, 'repeat');
+          if (waterPattern) {
             ctx.save();
             ctx.beginPath();
-            ctx.rect(bx, by2, bw, bh);
+            ctx.rect(w.x, w.y, w.w, w.h);
             ctx.clip();
-            ctx.fillStyle = plankPattern;
-            ctx.fillRect(bx, by2, bw, bh);
-            // 桥两侧栏杆
-            ctx.fillStyle = 'rgba(40,32,24,0.85)';
-            ctx.fillRect(bx, by2, 10, bh);
-            ctx.fillRect(bx + bw - 10, by2, 10, bh);
+            ctx.fillStyle = waterPattern;
+            ctx.fillRect(w.x, w.y, w.w, w.h);
+            const bank = ctx.createLinearGradient(0, w.y, 0, w.y + w.h);
+            bank.addColorStop(0, 'rgba(0,0,0,0.45)');
+            bank.addColorStop(0.18, 'rgba(0,0,0,0)');
+            bank.addColorStop(0.82, 'rgba(0,0,0,0)');
+            bank.addColorStop(1, 'rgba(0,0,0,0.45)');
+            ctx.fillStyle = bank;
+            ctx.fillRect(w.x, w.y, w.w, w.h);
             ctx.restore();
           }
-        }
-      }
-      if (city.water) {
-        const w = city.water;
-        const g = ctx.createLinearGradient(0, w.y, 0, w.y + w.h);
-        g.addColorStop(0, '#0f2a33');
-        g.addColorStop(0.45, '#1b4855');
-        g.addColorStop(1, '#0d242c');
-        ctx.fillStyle = g;
-        ctx.fillRect(w.x, w.y, w.w, w.h);
-
-        // 波纹
-        ctx.strokeStyle = 'rgba(150,205,225,0.14)';
-        ctx.lineWidth = 1.5;
-        for (let i = 0; i < 26; i++) {
-          const rx = ((i * 173) % w.w) + w.x;
-          const ry = w.y + 14 + ((i * 47) % (w.h - 28));
-          ctx.beginPath();
-          ctx.moveTo(rx, ry);
-          ctx.quadraticCurveTo(rx + 26, ry - 3, rx + 54, ry);
-          ctx.stroke();
+        } else {
+          const g = ctx.createLinearGradient(0, w.y, 0, w.y + w.h);
+          g.addColorStop(0, '#0f2a33');
+          g.addColorStop(0.45, '#1b4855');
+          g.addColorStop(1, '#0d242c');
+          ctx.fillStyle = g;
+          ctx.fillRect(w.x, w.y, w.w, w.h);
         }
 
         // 两岸石线
@@ -700,6 +687,28 @@ export function WorldScene({
         ctx.moveTo(w.x, w.y + w.h - 2);
         ctx.lineTo(w.x + w.w, w.y + w.h - 2);
         ctx.stroke();
+
+        // 桥面：画在水之后，避免被水面覆盖
+        const plankImg = R0['plank'];
+        if (plankImg && plankImg.complete) {
+          const bx = 760;
+          const bw = 480;
+          const by2 = w.y - 6;
+          const bh = w.h + 12;
+          if (!plankPattern) plankPattern = ctx.createPattern(plankImg, 'repeat');
+          if (plankPattern) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(bx, by2, bw, bh);
+            ctx.clip();
+            ctx.fillStyle = plankPattern;
+            ctx.fillRect(bx, by2, bw, bh);
+            ctx.fillStyle = 'rgba(40,32,24,0.85)';
+            ctx.fillRect(bx, by2, 10, bh);
+            ctx.fillRect(bx + bw - 10, by2, 10, bh);
+            ctx.restore();
+          }
+        }
       }
 
       city.buildings.forEach(drawBuilding);
