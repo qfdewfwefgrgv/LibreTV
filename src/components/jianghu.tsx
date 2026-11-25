@@ -1852,6 +1852,8 @@ export function JianghuGame() {
   // 对白逐字显示：模拟游戏对话框
   const [worldOpen, setWorldOpen] = useState(false);
   const worldAutoOpened = useRef(false);
+  // 世界内对话：剧情以浮层显示，城市保持可见
+  const [talkOpen, setTalkOpen] = useState(false);
 
   const [typedLen, setTypedLen] = useState(0);
   const [typingDone, setTypingDone] = useState(false);
@@ -2009,6 +2011,9 @@ export function JianghuGame() {
     setTreasure(defaultTreasure());
     setPrison(defaultPrison());
     setCompanions(defaultCompanions());
+    worldAutoOpened.current = true;
+    setWorldOpen(true);
+    setTalkOpen(false);
     setActiveQuestId(null);
     travelCount.current = 0;
     logSeq.current = 2 + gifted.lines.length;
@@ -2054,6 +2059,8 @@ export function JianghuGame() {
     setBattle(null);
     setEndingKey(null);
     setPanel(null);
+    worldAutoOpened.current = true;
+    setWorldOpen(true);
     travelCount.current = 0;
     logSeq.current = 1;
     setLogs([{ id: 1, text: `续接江湖录 · ${NODES[saveData.nodeId].title}`, tone: 'info' }]);
@@ -3582,8 +3589,14 @@ export function JianghuGame() {
       )}
 
       {/* ════ 游戏主界面 ════ */}
-      {(phase === 'play' || phase === 'end') && hero && node && (
-        <div>
+      {(phase === 'play' || phase === 'end') && hero && node && (talkOpen || !worldOpen) && (
+        <div
+          className={
+            talkOpen
+              ? 'fixed inset-0 z-[90] overflow-y-auto bg-black/55 p-3 backdrop-blur-[2px] sm:p-6'
+              : ''
+          }
+        >
           {/* 人物状态条：人头 + 属性（手游式顶部状态栏） */}
           <div className="mb-3 flex items-center gap-3 rounded-xl border border-line bg-card p-3">
             <Portrait name={avatarKey} size={52} ring="border-accent/50" />
@@ -3816,7 +3829,7 @@ export function JianghuGame() {
           <div className="mt-3 flex items-center gap-3">
             <button
               type="button"
-              onClick={() => setWorldOpen(true)}
+              onClick={() => { setTalkOpen(false); setWorldOpen(true); }}
               className="rounded-lg border border-accent/50 bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent/20"
             >
               🗺️ 回到城中
@@ -4749,12 +4762,12 @@ export function JianghuGame() {
       {/* ════ 可自由行走的世界层 ════ */}
       {worldOpen && (
         <WorldScene
-          onClose={() => setWorldOpen(false)}
+          onClose={() => { setWorldOpen(false); setTalkOpen(false); }}
           school={hero?.school ?? "dao"}
           npcQuests={worldNpcQuests}
           hud={worldHud}
           onEnterNode={(id) => {
-            setWorldOpen(false);
+            setTalkOpen(true);
             if (hero && NODES[id]) enter(id, hero);
           }}
         />
