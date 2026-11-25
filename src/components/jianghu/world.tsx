@@ -213,6 +213,11 @@ export function WorldScene({
       ground3: '/game/world/tiles/tile-ground-3.webp',
       ground4: '/game/world/tiles/tile-ground-4.webp',
       ground5: '/game/world/tiles/tile-ground-5.webp',
+      wallTex: '/game/world/tiles/tile-wall.webp',
+      earth1: '/game/world/tiles/tile-earth-1.webp',
+      earth2: '/game/world/tiles/tile-earth-2.webp',
+      plank: '/game/world/tiles/tile-plank.webp',
+      roofTex: '/game/world/tiles/tile-roof.webp',
       ground6: '/game/world/tiles/tile-ground-6.webp',
       road1: '/game/world/tiles/tile-road-1.webp',
       road2: '/game/world/tiles/tile-road-2.webp',
@@ -302,6 +307,7 @@ export function WorldScene({
     };
     let groundPattern: CanvasPattern | null = null;
     let roadPattern: CanvasPattern | null = null;
+    let wallPattern: CanvasPattern | null = null;
 
     const hits = (x: number, y: number, r: number) =>
       SOLID.some((b) => x + r > b.x && x - r < b.x + b.w && y + r > b.y && y - r < b.y + b.h);
@@ -409,26 +415,27 @@ export function WorldScene({
       const isLongWall = b.w >= 700 || b.h >= 700;
       const wallSprite = R['wall'];
 
-      if (isLongWall && wallSprite) {
-        // 城墙：沿长轴用城墙贴片平铺
-        if (b.w >= b.h) {
-          const th = Math.max(70, b.h * 1.9);
-          const tw = th * (wallSprite.width / wallSprite.height);
-          ctx.save();
-          ctx.beginPath();
-          ctx.rect(x, y - th, w, h + th);
-          ctx.clip();
-          for (let px = x; px < x + w; px += tw) ctx.drawImage(wallSprite, px, y + h - th, tw, th);
-          ctx.restore();
-        } else {
-          const tw2 = Math.max(70, b.w * 1.9);
-          const th2 = tw2 * (wallSprite.height / wallSprite.width);
-          ctx.save();
-          ctx.beginPath();
-          ctx.rect(x - tw2, y, w + tw2, h);
-          ctx.clip();
-          for (let py = y; py < y + h; py += th2) ctx.drawImage(wallSprite, x + w - tw2, py, tw2, th2);
-          ctx.restore();
+      if (isLongWall) {
+        // 城墙：用青砖材质贴图平铺，比拉城市贴片干净得多
+        const wt = R['wallTex'];
+        if (wt && wt.complete) {
+          if (!wallPattern) wallPattern = ctx.createPattern(wt, 'repeat');
+          if (wallPattern) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(x, y, w, h);
+            ctx.clip();
+            ctx.fillStyle = wallPattern;
+            ctx.fillRect(x, y, w, h);
+            // 顶沿压暗，城墙有厚度感
+            const edge = b.h >= b.w ? ctx.createLinearGradient(x, 0, x + w, 0) : ctx.createLinearGradient(0, y, 0, y + h);
+            edge.addColorStop(0, 'rgba(0,0,0,0.35)');
+            edge.addColorStop(0.5, 'rgba(0,0,0,0)');
+            edge.addColorStop(1, 'rgba(0,0,0,0.45)');
+            ctx.fillStyle = edge;
+            ctx.fillRect(x, y, w, h);
+            ctx.restore();
+          }
         }
       } else if (sprite) {
         if (b.kind === 'gate') {
