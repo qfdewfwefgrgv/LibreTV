@@ -348,12 +348,18 @@ export function WorldScene({
       const sprite = buildingSprite(b);
       const isWall = b.w >= 700 || b.h >= 700;
       if (!isWall && b.kind !== 'gate') {
-        // 建筑落地的投影，避免屋顶悬空
+        // 统一光源（左上）：阴影朝右下偏移，形成一致的立体关系
         ctx.save();
-        ctx.fillStyle = 'rgba(0,0,0,0.30)';
+        ctx.fillStyle = 'rgba(6,10,16,0.42)';
         ctx.beginPath();
-        ctx.ellipse(x + w / 2, y + h - 4, w * 0.52, h * 0.20, 0, 0, Math.PI * 2);
+        ctx.ellipse(x + w / 2 + w * 0.10, y + h + 2, w * 0.54, h * 0.22, 0, 0, Math.PI * 2);
         ctx.fill();
+        // 接地暗部：屋檐正下方压暗一圈，去掉“贴纸浮空”感
+        const gg = ctx.createLinearGradient(0, y + h - h * 0.55, 0, y + h + 10);
+        gg.addColorStop(0, 'rgba(0,0,0,0)');
+        gg.addColorStop(1, 'rgba(0,0,0,0.45)');
+        ctx.fillStyle = gg;
+        ctx.fillRect(x - 4, y + h - h * 0.55, w + 12, h * 0.55 + 10);
         ctx.restore();
       }
       const isLongWall = b.w >= 700 || b.h >= 700;
@@ -629,9 +635,9 @@ export function WorldScene({
           const h2 = 150 * (pr.scale ?? 1);
           const w2 = h2 * (img.width / img.height);
           ctx.save();
-          ctx.fillStyle = 'rgba(0,0,0,0.28)';
+          ctx.fillStyle = 'rgba(6,10,16,0.36)';
           ctx.beginPath();
-          ctx.ellipse(pr.x, pr.y, w2 * 0.32, w2 * 0.13, 0, 0, Math.PI * 2);
+          ctx.ellipse(pr.x + w2 * 0.10, pr.y + 2, w2 * 0.34, w2 * 0.14, 0, 0, Math.PI * 2);
           ctx.fill();
           ctx.restore();
           ctx.drawImage(img, pr.x - w2 / 2, pr.y - h2 + 18, w2, h2);
