@@ -45,6 +45,7 @@ type City = {
   buildings: Building[];
   npcs: Npc[];
   regions?: Region[];
+  props?: { x: number; y: number; kind: 'tree' | 'lantern' | 'stall'; scale?: number }[];
   water?: { x: number; y: number; w: number; h: number };
 };
 
@@ -75,6 +76,32 @@ const LUOYANG: City = {
     // 南侧集市
     { x: 340, y: 960, w: 260, h: 160, kind: 'shop', name: '灯市摊' },
     { x: 1180, y: 950, w: 300, h: 170, kind: 'shop', name: '茶楼' },
+    // 西巷 / 东巷两侧屋舍（形成巷道层次）
+    { x: 300, y: 440, w: 200, h: 130, kind: 'house', name: '民居' },
+    { x: 300, y: 1080, w: 200, h: 130, kind: 'house', name: '民居' },
+    { x: 1520, y: 460, w: 210, h: 140, kind: 'house', name: '民居' },
+    { x: 1520, y: 1080, w: 210, h: 140, kind: 'house', name: '民居' },
+    // 衙署两侧的偏院
+    { x: 620, y: 560, w: 140, h: 110, kind: 'house', name: '偏院' },
+    { x: 1250, y: 560, w: 140, h: 110, kind: 'house', name: '偏院' },
+  ],
+  props: [
+    // 主街两侧灯笼
+    { x: 770, y: 320, kind: 'lantern' }, { x: 770, y: 520, kind: 'lantern' },
+    { x: 770, y: 900, kind: 'lantern' }, { x: 770, y: 1100, kind: 'lantern' },
+    { x: 1230, y: 320, kind: 'lantern' }, { x: 1230, y: 520, kind: 'lantern' },
+    { x: 1230, y: 900, kind: 'lantern' }, { x: 1230, y: 1100, kind: 'lantern' },
+    // 广场四周树
+    { x: 700, y: 520, kind: 'tree' }, { x: 1300, y: 520, kind: 'tree' },
+    { x: 700, y: 880, kind: 'tree' }, { x: 1300, y: 880, kind: 'tree' },
+    // 城门内两株古树
+    { x: 880, y: 150, kind: 'tree' }, { x: 1120, y: 150, kind: 'tree' },
+    // 集市摊位与树
+    { x: 620, y: 1000, kind: 'stall' }, { x: 640, y: 1120, kind: 'stall' },
+    { x: 1100, y: 1000, kind: 'stall' },
+    { x: 260, y: 900, kind: 'tree' }, { x: 1740, y: 900, kind: 'tree' },
+    { x: 260, y: 620, kind: 'tree' }, { x: 1740, y: 620, kind: 'tree' },
+    { x: 520, y: 300, kind: 'lantern' }, { x: 1480, y: 300, kind: 'lantern' },
   ],
   npcs: [
     { id: 'n1', name: '顾长风', x: 1000, y: 900, node: 'a01', kind: 'main', hint: '主线 · 顾长风在等你', region: 'gov' },
@@ -164,6 +191,12 @@ export function WorldScene({
       'hero-jian': '/game/world/hero-jian.webp',
       'hero-quan': '/game/world/hero-quan.webp',
       ground: '/game/world/tiles/tile-ground.webp',
+      ground1: '/game/world/tiles/tile-ground-1.webp',
+      ground2: '/game/world/tiles/tile-ground-2.webp',
+      ground3: '/game/world/tiles/tile-ground-3.webp',
+      ground4: '/game/world/tiles/tile-ground-4.webp',
+      road1: '/game/world/tiles/tile-road-1.webp',
+      road2: '/game/world/tiles/tile-road-2.webp',
       road: '/game/world/tiles/tile-road.webp',
       'house-a': '/game/world/tiles/obj-house-a.webp',
       'house-b': '/game/world/tiles/obj-house-b.webp',
@@ -477,21 +510,35 @@ export function WorldScene({
       ctx.scale(ZOOM, ZOOM);
       ctx.translate(-cam.x, -cam.y);
 
-      // 地面：贴片平铺，缺图回落纯色
-      const groundImg = spritesRef.current['ground'];
-      if (groundImg && groundImg.complete) {
-        if (!groundPattern) groundPattern = ctx.createPattern(groundImg, 'repeat');
-        if (groundPattern) {
-          ctx.fillStyle = groundPattern;
-          ctx.fillRect(0, 0, city.w, city.h);
+      // 地面：按 512 网格随机取 4 种变体，消除平铺重复感
+      const R0 = spritesRef.current;
+      const gVariants = [R0['ground1'], R0['ground2'], R0['ground3'], R0['ground4']].filter(
+        (im) => im && im.complete
+      ) as HTMLImageElement[];
+      const CELL = 512;
+      if (gVariants.length) {
+        for (let gy = 0; gy < city.h; gy += CELL) {
+          for (let gx = 0; gx < city.w; gx += CELL) {
+            const idx = (((gx / CELL) * 7 + (gy / CELL) * 13) | 0) % gVariants.length;
+            ctx.drawImage(gVariants[idx], gx, gy, CELL, CELL);
+          }
         }
       } else {
-        ctx.fillStyle = city.ground;
-        ctx.fillRect(0, 0, city.w, city.h);
+        const groundImg = R0['ground'];
+        if (groundImg && groundImg.complete) {
+          if (!groundPattern) groundPattern = ctx.createPattern(groundImg, 'repeat');
+          if (groundPattern) {
+            ctx.fillStyle = groundPattern;
+            ctx.fillRect(0, 0, city.w, city.h);
+          }
+        } else {
+          ctx.fillStyle = city.ground;
+          ctx.fillRect(0, 0, city.w, city.h);
+        }
       }
 
       // 主街：贴片平铺
-      const roadImg = spritesRef.current['road'];
+      const roadImg = spritesRef.current['road1'] ?? spritesRef.current['road'];
       if (roadImg && roadImg.complete) {
         if (!roadPattern) roadPattern = ctx.createPattern(roadImg, 'repeat');
         if (roadPattern) {
@@ -573,6 +620,60 @@ export function WorldScene({
       }
 
       city.buildings.forEach(drawBuilding);
+
+      // 装饰物：按 y 排序，形成前后遮挡
+      const propImg = (kind: 'tree' | 'lantern' | 'stall') =>
+        kind === 'tree' ? R0['tree'] : kind === 'lantern' ? R0['lantern'] : R0['house-a'];
+      const props = (city.props ?? []).slice().sort((a, b2) => a.y - b2.y);
+      for (const pr of props) {
+        const img = propImg(pr.kind);
+        if (!img || !img.complete) continue;
+        if (pr.kind === 'tree') {
+          const h2 = 150 * (pr.scale ?? 1);
+          const w2 = h2 * (img.width / img.height);
+          ctx.save();
+          ctx.fillStyle = 'rgba(0,0,0,0.28)';
+          ctx.beginPath();
+          ctx.ellipse(pr.x, pr.y, w2 * 0.32, w2 * 0.13, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+          ctx.drawImage(img, pr.x - w2 / 2, pr.y - h2 + 18, w2, h2);
+        } else if (pr.kind === 'lantern') {
+          // 灯笼：小尺寸挂在杆头，光晕淡一点
+          const h2 = 40 * (pr.scale ?? 1);
+          const w2 = h2 * (img.width / img.height);
+          ctx.save();
+          ctx.globalAlpha = 0.85;
+          ctx.drawImage(img, pr.x - w2 / 2, pr.y - h2 + 6, w2, h2);
+          ctx.restore();
+        } else {
+          // 摊位：程序化棚子（支柱 + 布顶）
+          const sw = 84 * (pr.scale ?? 1);
+          const sh = 46 * (pr.scale ?? 1);
+          ctx.save();
+          ctx.fillStyle = 'rgba(0,0,0,0.25)';
+          ctx.beginPath();
+          ctx.ellipse(pr.x, pr.y, sw * 0.5, sw * 0.18, 0, 0, Math.PI * 2);
+          ctx.fill();
+          // 支柱
+          ctx.fillStyle = '#3b3128';
+          ctx.fillRect(pr.x - sw * 0.42, pr.y - sh, 5, sh);
+          ctx.fillRect(pr.x + sw * 0.42 - 5, pr.y - sh, 5, sh);
+          // 布顶
+          ctx.fillStyle = '#8a4a34';
+          ctx.beginPath();
+          ctx.moveTo(pr.x - sw * 0.5, pr.y - sh);
+          ctx.lineTo(pr.x + sw * 0.5, pr.y - sh);
+          ctx.lineTo(pr.x + sw * 0.34, pr.y - sh * 1.55);
+          ctx.lineTo(pr.x - sw * 0.34, pr.y - sh * 1.55);
+          ctx.closePath();
+          ctx.fill();
+          // 摊面
+          ctx.fillStyle = '#6d5a3f';
+          ctx.fillRect(pr.x - sw * 0.44, pr.y - sh * 0.6, sw * 0.88, sh * 0.28);
+          ctx.restore();
+        }
+      }
       city.npcs.forEach(drawNpc);
       drawPlayer();
 
