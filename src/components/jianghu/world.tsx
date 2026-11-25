@@ -316,6 +316,16 @@ export function WorldScene({
       const { x, y, w, h } = b;
       const R = spritesRef.current;
       const sprite = buildingSprite(b);
+      const isWall = b.w >= 700 || b.h >= 700;
+      if (!isWall && b.kind !== 'gate') {
+        // 建筑落地的投影，避免屋顶悬空
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.30)';
+        ctx.beginPath();
+        ctx.ellipse(x + w / 2, y + h - 4, w * 0.52, h * 0.20, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
       const isLongWall = b.w >= 700 || b.h >= 700;
       const wallSprite = R['wall'];
 
@@ -347,8 +357,8 @@ export function WorldScene({
           const dw = dh * (sprite.width / sprite.height);
           ctx.drawImage(sprite, x + (w - dw) / 2, y + h - dh, dw, dh);
         } else {
-          // 普通建筑：按地块宽度铺满，底边对齐，保持比例
-          const scale = (w * 1.18) / sprite.width;
+          // 普通建筑：最多按原图 1:1 绘制（不放大），底边对齐地块下沿
+          const scale = Math.min((w * 1.12) / sprite.width, (h * 1.7) / sprite.height, 1);
           const dw = sprite.width * scale;
           const dh = sprite.height * scale;
           ctx.drawImage(sprite, x + (w - dw) / 2, y + h - dh, dw, dh);
@@ -506,6 +516,19 @@ export function WorldScene({
         ctx.fillRect(90, 700, city.w - 180, 180);
       }
 
+      // 主街交叉口：路面向外延展一圈，避免直角硬切
+      const roadImg2 = spritesRef.current['road'];
+      if (roadImg2 && roadImg2.complete) {
+        if (!roadPattern) roadPattern = ctx.createPattern(roadImg2, 'repeat');
+        if (roadPattern) {
+          ctx.save();
+          ctx.fillStyle = roadPattern;
+          // 交叉口本体
+          ctx.fillRect(700, 640, 600, 300);
+          ctx.restore();
+        }
+      }
+
       // 砖缝
       ctx.strokeStyle = 'rgba(255,255,255,0.03)';
       ctx.lineWidth = 1;
@@ -519,14 +542,34 @@ export function WorldScene({
       // 河
       if (city.water) {
         const w = city.water;
-        ctx.fillStyle = '#16333d';
+        const g = ctx.createLinearGradient(0, w.y, 0, w.y + w.h);
+        g.addColorStop(0, '#0f2a33');
+        g.addColorStop(0.45, '#1b4855');
+        g.addColorStop(1, '#0d242c');
+        ctx.fillStyle = g;
         ctx.fillRect(w.x, w.y, w.w, w.h);
-        ctx.fillStyle = 'rgba(140,200,220,0.10)';
-        for (let i = 0; i < 30; i++) {
-          const rx = ((i * 137) % w.w) + w.x;
-          const ry = w.y + 10 + ((i * 53) % (w.h - 20));
-          ctx.fillRect(rx, ry, 60, 2);
+
+        // 波纹
+        ctx.strokeStyle = 'rgba(150,205,225,0.14)';
+        ctx.lineWidth = 1.5;
+        for (let i = 0; i < 26; i++) {
+          const rx = ((i * 173) % w.w) + w.x;
+          const ry = w.y + 14 + ((i * 47) % (w.h - 28));
+          ctx.beginPath();
+          ctx.moveTo(rx, ry);
+          ctx.quadraticCurveTo(rx + 26, ry - 3, rx + 54, ry);
+          ctx.stroke();
         }
+
+        // 两岸石线
+        ctx.strokeStyle = 'rgba(200,215,225,0.22)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(w.x, w.y + 2);
+        ctx.lineTo(w.x + w.w, w.y + 2);
+        ctx.moveTo(w.x, w.y + w.h - 2);
+        ctx.lineTo(w.x + w.w, w.y + w.h - 2);
+        ctx.stroke();
       }
 
       city.buildings.forEach(drawBuilding);
