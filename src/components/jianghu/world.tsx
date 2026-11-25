@@ -96,9 +96,6 @@ const LUOYANG: City = {
     { x: 700, y: 880, kind: 'tree' }, { x: 1300, y: 880, kind: 'tree' },
     // 城门内两株古树
     { x: 880, y: 150, kind: 'tree' }, { x: 1120, y: 150, kind: 'tree' },
-    // 集市摊位与树
-    { x: 620, y: 1000, kind: 'stall' }, { x: 640, y: 1120, kind: 'stall' },
-    { x: 1100, y: 1000, kind: 'stall' },
     { x: 260, y: 900, kind: 'tree' }, { x: 1740, y: 900, kind: 'tree' },
     { x: 260, y: 620, kind: 'tree' }, { x: 1740, y: 620, kind: 'tree' },
     { x: 520, y: 300, kind: 'lantern' }, { x: 1480, y: 300, kind: 'lantern' },
@@ -677,6 +674,20 @@ export function WorldScene({
       city.npcs.forEach(drawNpc);
       drawPlayer();
 
+      ctx.restore();
+
+      // 氛围：冷调叠色 + 暗角，压掉糖果感
+      ctx.save();
+      ctx.fillStyle = 'rgba(22,30,44,0.18)';
+      ctx.fillRect(0, 0, vw, vh);
+      const vg = ctx.createRadialGradient(
+        vw / 2, vh / 2, Math.min(vw, vh) * 0.30,
+        vw / 2, vh / 2, Math.max(vw, vh) * 0.75
+      );
+      vg.addColorStop(0, 'rgba(0,0,0,0)');
+      vg.addColorStop(1, 'rgba(0,0,0,0.55)');
+      ctx.fillStyle = vg;
+      ctx.fillRect(0, 0, vw, vh);
       ctx.restore();
       raf = requestAnimationFrame(loop);
     };
