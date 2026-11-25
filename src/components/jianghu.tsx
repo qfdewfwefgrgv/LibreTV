@@ -2179,6 +2179,12 @@ export function JianghuGame() {
       setEvent({ ev, next: choice.next });
       return;
     }
+    const tgt = NODES[choice.next];
+    // 世界优先：没有战斗、不是结局，选完就回城继续走
+    if (tgt && !tgt.ending) {
+      setTalkOpen(false);
+      setWorldOpen(true);
+    }
     enter(choice.next, next);
   };
 
@@ -4794,6 +4800,25 @@ export function JianghuGame() {
           school={hero?.school ?? "dao"}
           npcQuests={worldNpcQuests}
           hud={worldHud}
+          onCollect={(kind) => {
+            if (!hero) return '';
+            if (kind === 'herb') {
+              const next = applyEffects({ ...hero, lifeSkills: gainLifeSkill(hero.lifeSkills ?? defaultLifeSkills(), 'herb', 6) }, { items: ['草药', '草药'] });
+              setHero(gainWine(next, 1));
+              pushLog('【采集】在草丛里寻到两株草药。', 'win');
+              return '采得草药 ×2';
+            }
+            if (kind === 'mine') {
+              const next = applyEffects({ ...hero, lifeSkills: gainLifeSkill(hero.lifeSkills ?? defaultLifeSkills(), 'mine', 6) }, { items: ['矿石'] });
+              setHero(next);
+              pushLog('【采矿】敲下一块矿石。', 'win');
+              return '采得矿石 ×1';
+            }
+            const next = applyEffects({ ...hero, silver: hero.silver + 30 }, { items: ['金创药'] });
+            setHero(next);
+            pushLog('【宝箱】箱底压着些碎银和一瓶金创药。', 'win');
+            return '银两 +30 · 金创药 ×1';
+          }}
           onEnterNode={(id) => {
             setTalkOpen(true);
             if (hero && NODES[id]) enter(id, hero);

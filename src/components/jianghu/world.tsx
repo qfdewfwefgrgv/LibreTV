@@ -46,6 +46,8 @@ type City = {
   npcs: Npc[];
   regions?: Region[];
   props?: { x: number; y: number; kind: 'tree' | 'lantern' | 'stall'; scale?: number }[];
+  /** 可交互采集点：草药 / 矿脉 / 宝箱 */
+  spots?: { id: string; x: number; y: number; kind: 'herb' | 'mine' | 'chest' }[];
   water?: { x: number; y: number; w: number; h: number };
 };
 
@@ -84,6 +86,15 @@ const LUOYANG: City = {
     // 衙署两侧的偏院
     { x: 620, y: 560, w: 140, h: 110, kind: 'house', name: '偏院' },
     { x: 1250, y: 560, w: 140, h: 110, kind: 'house', name: '偏院' },
+  ],
+  spots: [
+    { id: 'sp-h1', x: 340, y: 1160, kind: 'herb' },
+    { id: 'sp-h2', x: 1660, y: 1150, kind: 'herb' },
+    { id: 'sp-h3', x: 240, y: 520, kind: 'herb' },
+    { id: 'sp-m1', x: 1760, y: 380, kind: 'mine' },
+    { id: 'sp-m2', x: 170, y: 1060, kind: 'mine' },
+    { id: 'sp-c1', x: 960, y: 1110, kind: 'chest' },
+    { id: 'sp-c2', x: 1500, y: 760, kind: 'chest' },
   ],
   props: [
     // 主街两侧灯笼
@@ -158,12 +169,15 @@ export function WorldScene({
   school,
   hud,
   npcQuests,
+  onCollect,
 }: {
   onEnterNode: (nodeId: string) => void;
   onClose: () => void;
   school: 'quan' | 'jian' | 'dao';
   hud?: WorldHud;
   npcQuests?: Record<string, { title: string; done: boolean; active: boolean }>;
+  /** 采集回调：返回提示文案 */
+  onCollect?: (kind: 'herb' | 'mine' | 'chest') => string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const keysRef = useRef<Set<string>>(new Set());
@@ -171,8 +185,14 @@ export function WorldScene({
   const playerRef = useRef({ x: 1000, y: 1000, vx: 0, vy: 0, face: 1 });
   const cameraRef = useRef({ x: 0, y: 0 });
   const nearRef = useRef<Npc | null>(null);
+  const nearSpotRef = useRef<{ id: string; x: number; y: number; kind: 'herb' | 'mine' | 'chest' } | null>(null);
   const questsRef = useRef<Record<string, { title: string; done: boolean; active: boolean }>>({});
+  const [collected, setCollected] = useState<Record<string, boolean>>({});
+  const [toast, setToast] = useState('');
+  const toastTimer = useRef<number | null>(null);
   useEffect(() => { questsRef.current = npcQuests ?? {}; }, [npcQuests]);
+  const collectedRef = useRef<Record<string, boolean>>({});
+  useEffect(() => { collectedRef.current = collected; }, [collected]);
   const [nearNpc, setNearNpc] = useState<Npc | null>(null);
   const [cityKey, setCityKey] = useState('luoyang');
   const [entered, setEntered] = useState(false);
@@ -227,6 +247,16 @@ export function WorldScene({
       if ((e.key === 'e' || e.key === 'E' || e.key === ' ') && nearRef.current) {
         e.preventDefault();
         enterNpc(nearRef.current);
+        return;
+      }
+      if ((e.key === 'e' || e.key === 'E' || e.key === ' ') && nearSpotRef.current && onCollect) {
+        e.preventDefault();
+        const spot = nearSpotRef.current;
+        const msg = onCollect(spot.kind);
+        setCollected((prev) => ({ ...prev, [spot.id]: true }));
+        setToast(msg);
+        if (toastTimer.current) window.clearTimeout(toastTimer.current);
+        toastTimer.current = window.setTimeout(() => setToast(''), 2600);
       }
       if (e.key === 'Escape') onClose();
     };
@@ -319,6 +349,16 @@ export function WorldScene({
       }
 
       nearRef.current = best;
+
+      // 最近的采集点
+      let bestSpot: { id: string; x: number; y: number; kind: 'herb' | 'mine' | 'chest' } | null = null;
+      let bestSd = 78;
+      for (const sp of city.spots ?? []) {
+        if (collectedRef.current[sp.id]) continue;
+        const d = Math.hypot(p.x - sp.x, p.y - sp.y);
+        if (d < bestSd) { bestSd = d; bestSpot = sp; }
+      }
+      nearSpotRef.current = bestSpot;
       setNearNpc((prev) => (prev?.id === best?.id ? prev : best));
 
       const vw = canvas.clientWidth;
@@ -341,6 +381,8 @@ export function WorldScene({
           return (Math.floor(b.x / 120) % 2 === 0 ? R["house-a"] : R["house-b"]);
       }
     };
+
+    const isChestShape = (kind: 'herb' | 'mine' | 'chest') => kind === 'chest';
 
     const drawBuilding = (b: Building) => {
       const { x, y, w, h } = b;
@@ -677,6 +719,33 @@ export function WorldScene({
           ctx.restore();
         }
       }
+      // 采集点
+      for (const sp of city.spots ?? []) {
+        if (collected[sp.id]) continue;
+        const isHerb = sp.kind === 'herb';
+        const isMine = sp.kind === 'mine';
+        const col = isHerb ? '#6fae5a' : isMine ? '#8b8f96' : '#d8b45a';
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.35)';
+        ctx.beginPath();
+        ctx.ellipse(sp.x, sp.y + 6, 16, 7, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = col;
+        if (isChestShape(sp.kind)) {
+          ctx.fillRect(sp.x - 13, sp.y - 10, 26, 16);
+          ctx.fillStyle = '#2b2419';
+          ctx.fillRect(sp.x - 13, sp.y - 2, 26, 3);
+        } else {
+          for (let i = 0; i < 3; i++) {
+            const a = (i / 3) * Math.PI * 2 + 0.4;
+            ctx.beginPath();
+            ctx.ellipse(sp.x + Math.cos(a) * 6, sp.y - 4 + Math.sin(a) * 4, 7, 4, a, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        ctx.restore();
+      }
+
       city.npcs.forEach(drawNpc);
       drawPlayer();
 
@@ -823,8 +892,8 @@ export function WorldScene({
           </div>
         )}
         {/* 摇杆提示 */}
-        <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 text-[10px] text-white/30">
-          拖动屏幕任意位置 = 走动
+        <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded bg-black/50 px-2 py-1 text-[10px] text-white/45">
+          {toast || '拖动屏幕任意位置 = 走动 · 靠近草药/矿脉/宝箱按 E 采集'}
         </div>
       </div>
     </div>
