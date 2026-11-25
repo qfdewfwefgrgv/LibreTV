@@ -108,6 +108,9 @@ export const WORLD_NPC_QUESTS: Record<string, string> = {
 
 const CITIES: Record<string, City> = { luoyang: LUOYANG };
 
+/** 镜头缩放：0.55 表示视野放大，能同时看到半座城 */
+const ZOOM = 0.55;
+
 const ROOF: Record<Building['kind'], string> = {
   house: '#3a3f4a',
   temple: '#7a3a2a',
@@ -290,8 +293,10 @@ export function WorldScene({
 
       const vw = canvas.clientWidth;
       const vh = canvas.clientHeight;
-      cameraRef.current.x = Math.max(0, Math.min(city.w - vw, p.x - vw / 2));
-      cameraRef.current.y = Math.max(0, Math.min(city.h - vh, p.y - vh / 2));
+      const viewW = vw / ZOOM;
+    const viewH = vh / ZOOM;
+    cameraRef.current.x = Math.max(0, Math.min(Math.max(0, city.w - viewW), p.x - viewW / 2));
+      cameraRef.current.y = Math.max(0, Math.min(Math.max(0, city.h - viewH), p.y - viewH / 2));
     };
 
     const buildingSprite = (b: Building) => {
@@ -309,13 +314,45 @@ export function WorldScene({
 
     const drawBuilding = (b: Building) => {
       const { x, y, w, h } = b;
+      const R = spritesRef.current;
       const sprite = buildingSprite(b);
-      if (sprite) {
-        // 按宽度铺满地块，底边对齐地块下沿，保持原图比例
-        const scale = (w * 1.18) / sprite.width;
-        const dw = sprite.width * scale;
-        const dh = sprite.height * scale;
-        ctx.drawImage(sprite, x + (w - dw) / 2, y + h - dh, dw, dh);
+      const isLongWall = b.w >= 700 || b.h >= 700;
+      const wallSprite = R['wall'];
+
+      if (isLongWall && wallSprite) {
+        // 城墙：沿长轴用城墙贴片平铺
+        if (b.w >= b.h) {
+          const th = Math.max(70, b.h * 1.9);
+          const tw = th * (wallSprite.width / wallSprite.height);
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(x, y - th, w, h + th);
+          ctx.clip();
+          for (let px = x; px < x + w; px += tw) ctx.drawImage(wallSprite, px, y + h - th, tw, th);
+          ctx.restore();
+        } else {
+          const tw2 = Math.max(70, b.w * 1.9);
+          const th2 = tw2 * (wallSprite.height / wallSprite.width);
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(x - tw2, y, w + tw2, h);
+          ctx.clip();
+          for (let py = y; py < y + h; py += th2) ctx.drawImage(wallSprite, x + w - tw2, py, tw2, th2);
+          ctx.restore();
+        }
+      } else if (sprite) {
+        if (b.kind === 'gate') {
+          // 城门楼：居中放大，底边对齐
+          const dh = Math.max(h * 2.4, 200);
+          const dw = dh * (sprite.width / sprite.height);
+          ctx.drawImage(sprite, x + (w - dw) / 2, y + h - dh, dw, dh);
+        } else {
+          // 普通建筑：按地块宽度铺满，底边对齐，保持比例
+          const scale = (w * 1.18) / sprite.width;
+          const dw = sprite.width * scale;
+          const dh = sprite.height * scale;
+          ctx.drawImage(sprite, x + (w - dw) / 2, y + h - dh, dw, dh);
+        }
       } else {
         ctx.fillStyle = '#2a2e36';
         ctx.fillRect(x, y, w, h);
@@ -427,6 +464,7 @@ export function WorldScene({
 
       ctx.clearRect(0, 0, vw, vh);
       ctx.save();
+      ctx.scale(ZOOM, ZOOM);
       ctx.translate(-cam.x, -cam.y);
 
       // 地面：贴片平铺，缺图回落纯色
@@ -504,7 +542,7 @@ export function WorldScene({
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', resize);
     };
-  }, [city, school]);
+  }, [city, school, entered]);
 
   // 触屏摇杆
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
