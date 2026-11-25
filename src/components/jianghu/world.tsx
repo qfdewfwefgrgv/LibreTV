@@ -308,6 +308,7 @@ export function WorldScene({
     let groundPattern: CanvasPattern | null = null;
     let roadPattern: CanvasPattern | null = null;
     let wallPattern: CanvasPattern | null = null;
+    let plankPattern: CanvasPattern | null = null;
 
     const hits = (x: number, y: number, r: number) =>
       SOLID.some((b) => x + r > b.x && x - r < b.x + b.w && y + r > b.y && y - r < b.y + b.h);
@@ -570,11 +571,15 @@ export function WorldScene({
         (im) => im && im.complete
       ) as HTMLImageElement[];
       const CELL = 256;
+      const eVariants = [R0['earth1'], R0['earth2']].filter((im) => im && im.complete) as HTMLImageElement[];
       if (gVariants.length) {
         for (let gy = 0; gy < city.h; gy += CELL) {
           for (let gx = 0; gx < city.w; gx += CELL) {
-            const idx = (((gx / CELL) * 7 + (gy / CELL) * 13) | 0) % gVariants.length;
-            ctx.drawImage(gVariants[idx], gx, gy, CELL, CELL);
+            // 河以南是城外，用夯土；城内用石板
+            const outside = gy + CELL > (city.water ? city.water.y + city.water.h : city.h);
+            const pool = outside && eVariants.length ? eVariants : gVariants;
+            const idx = (((gx / CELL) * 7 + (gy / CELL) * 13) | 0) % pool.length;
+            ctx.drawImage(pool[idx], gx, gy, CELL, CELL);
           }
         }
       } else {
@@ -641,6 +646,30 @@ export function WorldScene({
       }
 
       // 河
+      if (city.water) {
+        // 桥面：主街跨河处铺木板
+        const plankImg = R0['plank'];
+        if (plankImg && plankImg.complete) {
+          const bx = 760;
+          const bw = 480;
+          const by2 = city.water.y - 6;
+          const bh = city.water.h + 12;
+          if (!plankPattern) plankPattern = ctx.createPattern(plankImg, 'repeat');
+          if (plankPattern) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(bx, by2, bw, bh);
+            ctx.clip();
+            ctx.fillStyle = plankPattern;
+            ctx.fillRect(bx, by2, bw, bh);
+            // 桥两侧栏杆
+            ctx.fillStyle = 'rgba(40,32,24,0.85)';
+            ctx.fillRect(bx, by2, 10, bh);
+            ctx.fillRect(bx + bw - 10, by2, 10, bh);
+            ctx.restore();
+          }
+        }
+      }
       if (city.water) {
         const w = city.water;
         const g = ctx.createLinearGradient(0, w.y, 0, w.y + w.h);
