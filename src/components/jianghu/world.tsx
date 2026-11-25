@@ -457,8 +457,8 @@ export function WorldScene({
       const bob = Math.sin(performance.now() / 220) * 1.5;
       const sprite = spritesRef.current[school];
       if (sprite) {
-        const W = 64;
-        const H = 74;
+        const W = 78;
+        const H = 90;
         ctx.save();
         ctx.translate(p.x, p.y + 6);
         if (p.face < 0) ctx.scale(-1, 1);
@@ -515,7 +515,7 @@ export function WorldScene({
       const gVariants = [R0['ground1'], R0['ground2'], R0['ground3'], R0['ground4']].filter(
         (im) => im && im.complete
       ) as HTMLImageElement[];
-      const CELL = 512;
+      const CELL = 256;
       if (gVariants.length) {
         for (let gy = 0; gy < city.h; gy += CELL) {
           for (let gx = 0; gx < city.w; gx += CELL) {

@@ -3691,12 +3691,12 @@ export function JianghuGame() {
             <img key={sceneKey} src={sceneArt(sceneKey)} onError={onSceneArtError(sceneKey)} alt={scene.label} loading="lazy" className="h-72 w-full object-cover transition-transform duration-700 sm:h-[26rem]" />
             <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/10 to-black/35" />
             {/* 主角立绘：站在场景右侧 */}
-            <div className="pointer-events-none absolute bottom-0 right-2 h-40 w-28 sm:right-6 sm:h-64 sm:w-40">
+            <div className="pointer-events-none absolute bottom-0 right-1 h-[62%] sm:right-6">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={PORTRAITS[avatarKey]}
                 alt="主角"
-                className="h-full w-full object-cover object-top [mask-image:linear-gradient(to_bottom,black_62%,transparent)] drop-shadow-[0_6px_18px_rgba(0,0,0,0.75)]"
+                className="h-full w-auto object-contain object-bottom drop-shadow-[0_6px_18px_rgba(0,0,0,0.75)] [mask-image:radial-gradient(ellipse_60%_70%_at_50%_45%,black_55%,transparent_88%)]"
               />
             </div>
             {/* 左侧：对话对象立绘 + 名牌 */}
@@ -3709,7 +3709,7 @@ export function JianghuGame() {
                   <img
                     src={PORTRAITS[sp]}
                     alt={sp}
-                    className="pointer-events-none absolute bottom-0 left-2 h-40 w-28 object-cover object-top drop-shadow-[0_6px_18px_rgba(0,0,0,0.75)] sm:left-6 sm:h-64 sm:w-40 [mask-image:linear-gradient(to_bottom,black_62%,transparent)]"
+                    className="pointer-events-none absolute bottom-0 left-1 h-[62%] w-auto object-contain object-bottom drop-shadow-[0_6px_18px_rgba(0,0,0,0.75)] [mask-image:radial-gradient(ellipse_60%_70%_at_50%_45%,black_55%,transparent_88%)] sm:left-6"
                   />
                   <span className="absolute bottom-2 left-3 rounded bg-black/70 px-2 py-0.5 text-[10px] font-semibold text-accent sm:left-7">
                     {sp}
