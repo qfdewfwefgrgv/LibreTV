@@ -212,6 +212,8 @@ export function WorldScene({
       ground2: '/game/world/tiles/tile-ground-2.webp',
       ground3: '/game/world/tiles/tile-ground-3.webp',
       ground4: '/game/world/tiles/tile-ground-4.webp',
+      ground5: '/game/world/tiles/tile-ground-5.webp',
+      ground6: '/game/world/tiles/tile-ground-6.webp',
       road1: '/game/world/tiles/tile-road-1.webp',
       road2: '/game/world/tiles/tile-road-2.webp',
       road: '/game/world/tiles/tile-road.webp',
@@ -557,7 +559,7 @@ export function WorldScene({
 
       // 地面：按 512 网格随机取 4 种变体，消除平铺重复感
       const R0 = spritesRef.current;
-      const gVariants = [R0['ground1'], R0['ground2'], R0['ground3'], R0['ground4']].filter(
+      const gVariants = [R0['ground1'], R0['ground2'], R0['ground3'], R0['ground4'], R0['ground5'], R0['ground6']].filter(
         (im) => im && im.complete
       ) as HTMLImageElement[];
       const CELL = 256;
