@@ -149,9 +149,11 @@ def build(cid, W, D, tile_c, wall_c):
 
 def setup_scene():
     scene = bpy.context.scene
-    scene.render.engine = "BLENDER_EEVEE_NEXT"
-    scene.render.resolution_x = 512
-    scene.render.resolution_y = 512
+    scene.render.engine = "CYCLES"
+    scene.cycles.samples = 64
+    scene.cycles.use_denoising = True
+    scene.render.resolution_x = 768
+    scene.render.resolution_y = 768
     scene.render.film_transparent = True
     scene.render.image_settings.file_format = "PNG"
     scene.render.image_settings.color_mode = "RGBA"
@@ -181,6 +183,12 @@ def setup_scene():
 
 def render_top(cid, path, W, D):
     scene = bpy.context.scene
+    # 阴影承接面：接收落地阴影，导出时保持透明
+    bpy.ops.mesh.primitive_plane_add(size=max(W, D) * 3, location=(0, 0, 0.0))
+    plane = bpy.context.object
+    plane.name = f"{cid}_catcher"
+    plane.is_shadow_catcher = True
+
     # 正交俯视，轻微俯角
     target = Vector((0, 0, 0.8))
     loc = Vector((0, -2.6, 9.0))
