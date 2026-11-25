@@ -217,6 +217,7 @@ export function WorldScene({
       road: '/game/world/tiles/tile-road.webp',
       'house-a': '/game/world/tiles/obj-house-a.webp',
       'house-b': '/game/world/tiles/obj-house-b.webp',
+      'house-c': '/game/world/tiles/obj-house-c.webp',
       temple: '/game/world/tiles/obj-temple.webp',
       inn: '/game/world/tiles/obj-inn.webp',
       gate: '/game/world/tiles/obj-gate.webp',
@@ -376,9 +377,11 @@ export function WorldScene({
         case 'inn': return R['inn'];
         case 'gate': return R['gate'];
         case 'shop': return R['house-a'];
-        default:
-          // 民居按位置交替用两种屋顶，避免整条街重复
-          return (Math.floor(b.x / 120) % 2 === 0 ? R["house-a"] : R["house-b"]);
+        default: {
+          // 民居按位置交替用三种屋顶，避免整条街重复
+          const pick = Math.floor(b.x / 120) % 3;
+          return pick === 0 ? R['house-a'] : pick === 1 ? R['house-b'] : R['house-c'];
+        }
       }
     };
 
