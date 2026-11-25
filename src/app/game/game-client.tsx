@@ -1768,7 +1768,7 @@ export default function GameClient() {
       {/* 游戏播放弹层：点卡片后在这里开局，不再把所有游戏堆在页面里 */}
       {playingGame && playingGame.Renderer && (
         <div
-          className={zoomed ? 'fixed inset-0 z-[80] bg-black' : 'fixed inset-0 z-[80] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-6'}
+          className={zoomed ? 'fixed inset-0 z-[80] bg-black' : 'fixed inset-0 z-[80] flex items-center justify-center bg-black/90 p-3 backdrop-blur-sm sm:p-6'}
           onClick={() => {
             setOpenId(null);
             setZoomed(false);

@@ -371,6 +371,16 @@ const PORTRAITS: Record<string, string> = {
   叛门长老: '/game/portraits/prisoner-panmen.webp',
 };
 
+/** 剧情节点 -> 说话人（名牌与右侧立绘） */
+const NODE_SPEAKER: Record<string, string> = {
+  a01: '顾长风',
+  a02: '青城弟子',
+  a04: '灯市老翁',
+  a05: '苏挽',
+  a06: '独眼掌柜',
+};
+const speakerOf = (id: string): string | null => NODE_SPEAKER[id] ?? null;
+
 // ──────────────────────────── 流派（拳 / 剑 / 刀） ────────────────────────────
 
 type School = {
@@ -3594,19 +3604,19 @@ export function JianghuGame() {
           className={
             talkOpen
               ? 'fixed inset-0 z-[90] overflow-y-auto bg-black/55 p-3 backdrop-blur-[2px] sm:p-6'
-              : ''
+              : 'min-h-full bg-[#0b0d10] p-3 sm:p-6'
           }
         >
           {/* 人物状态条：人头 + 属性（手游式顶部状态栏） */}
-          <div className="mb-3 flex items-center gap-3 rounded-xl border border-line bg-card p-3">
+          <div className="mb-2 flex items-center gap-2.5 rounded-xl border border-white/12 bg-black/55 p-2 backdrop-blur-sm">
             <Portrait name={avatarKey} size={52} ring="border-accent/50" />
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-x-2 text-[13px] font-semibold text-content">
+              <div className="flex flex-wrap items-center gap-x-2 text-[13px] font-semibold text-white/92">
                 <span className="rounded bg-accent/15 px-1.5 py-0.5 text-[11px] text-accent">Lv.{hero.level}</span>
                 <span>{playerName} · {hero.origin} · {SCHOOLS[hero.school].name}</span>
                 <span className="text-[10px] font-normal text-faint">{SCHOOLS[hero.school].weapon}</span>
               </div>
-              <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] text-muted sm:grid-cols-3">
+              <div className="mt-1 grid grid-cols-3 gap-x-2 gap-y-0.5 text-[10px] text-white/55 sm:grid-cols-6">
                 <span>❤️ 气血 {hero.hp}/{hero.maxHp}</span>
                 <span>🔷 内力 {hero.qi}</span>
                 <span>📖 悟性 {hero.wit}</span>
@@ -3678,7 +3688,7 @@ export function JianghuGame() {
           {/* 场景图（实物） */}
           <div className="relative mb-3 overflow-hidden rounded-xl border border-line">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img key={sceneKey} src={sceneArt(sceneKey)} onError={onSceneArtError(sceneKey)} alt={scene.label} loading="lazy" className="h-64 w-full object-cover transition-transform duration-700 sm:h-96" />
+            <img key={sceneKey} src={sceneArt(sceneKey)} onError={onSceneArtError(sceneKey)} alt={scene.label} loading="lazy" className="h-72 w-full object-cover transition-transform duration-700 sm:h-[26rem]" />
             <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/10 to-black/35" />
             {/* 主角立绘：站在场景右侧 */}
             <div className="pointer-events-none absolute bottom-0 right-2 h-40 w-28 sm:right-6 sm:h-64 sm:w-40">
@@ -3689,6 +3699,24 @@ export function JianghuGame() {
                 className="h-full w-full object-cover object-top [mask-image:linear-gradient(to_bottom,black_62%,transparent)] drop-shadow-[0_6px_18px_rgba(0,0,0,0.75)]"
               />
             </div>
+            {/* 左侧：对话对象立绘 + 名牌 */}
+            {(() => {
+              const sp = speakerOf(nodeId);
+              if (!sp || !PORTRAITS[sp]) return null;
+              return (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={PORTRAITS[sp]}
+                    alt={sp}
+                    className="pointer-events-none absolute bottom-0 left-2 h-40 w-28 object-cover object-top drop-shadow-[0_6px_18px_rgba(0,0,0,0.75)] sm:left-6 sm:h-64 sm:w-40 [mask-image:linear-gradient(to_bottom,black_62%,transparent)]"
+                  />
+                  <span className="absolute bottom-2 left-3 rounded bg-black/70 px-2 py-0.5 text-[10px] font-semibold text-accent sm:left-7">
+                    {sp}
+                  </span>
+                </>
+              );
+            })()}
             <div className="absolute left-3 top-3 rounded-md bg-black/45 px-2 py-1 text-[10px] text-white/85">
               {CHAPTER_LABELS[node.chapter]}
             </div>
@@ -3765,7 +3793,7 @@ export function JianghuGame() {
           ) : (
             /* 剧情对话框：场景 + 逐字对白 + 行动选项 */
             <div key={nodeId} className="jh-fade">
-              <div className="overflow-hidden rounded-xl border border-white/12 bg-black/72 shadow-[0_8px_30px_rgba(0,0,0,0.45)] backdrop-blur-sm">
+              <div className="relative z-10 -mt-16 mx-1 overflow-hidden rounded-xl border border-white/18 bg-black/80 shadow-[0_-6px_30px_rgba(0,0,0,0.6)] backdrop-blur-md sm:-mt-24 sm:mx-3">
                 {/* 标题条 */}
                 <div className="flex items-center justify-between gap-2 border-b border-white/10 px-3 py-1.5">
                   <span className="text-[11px] font-semibold tracking-wide text-accent">{node.title}</span>
